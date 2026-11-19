@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { stampDump, validateRow, zoneDump, type Dump } from "@/server/backup";
+import { musicianDump, stampDump, validateRow, zoneDump, type Dump } from "@/server/backup";
 
 // Tenancy phase 4: `restore --artist` gives an older backup's rows their artist in memory (the phase-3 rules), so it validates
 // and restores into a working state.
@@ -45,4 +45,31 @@ test("an older backup's artist with no time zone restores as America/Denver; one
   assert.equal((dump.artists[0].data as { timeZone: string }).timeZone, "America/Denver");
   assert.equal((dump.artists[1].data as { timeZone: string }).timeZone, "America/New_York");
   assert.equal(zoneDump(dump), 0, "a second pass changes nothing");
+});
+
+test("a pre-phase-7 users doc restores: its users.musicianId moves onto the membership in that musician's artist and is dropped", () => {
+  const user = (id: string, extra: Record<string, unknown>) => ({ path: `users/${id}`, data: common(id, { createdBy: id, email: `${id}@x.example`, name: id, ...extra }) });
+  const dump: Dump = {
+    users: [
+      user("u1", { artists: [{ artistId: "A", role: "admin" }, { artistId: "B", role: "member" }], musicianId: "m1", artistIds: ["A", "B"] }),
+      user("u2", { artists: [{ artistId: "A", role: "member", musicianId: "m2" }], musicianId: "m2", artistIds: ["A"] }),
+      user("u3", { artists: [{ artistId: "A", role: "member" }], musicianId: "gone", artistIds: ["A"] }),
+      user("u4", { artists: [{ artistId: "A", role: "admin" }], artistIds: ["A"] }),
+    ],
+    musicians: [
+      { path: "musicians/m1", data: common("m1", { artistId: "B", name: "Ann", instruments: ["bass"], active: true }) },
+      { path: "musicians/m2", data: common("m2", { artistId: "A", name: "Bo", instruments: [], active: true }) },
+    ],
+  };
+  assert.ok(validateRow(dump.users[0]).some((e) => /musicianId/.test(e)), "the old field fails today's schema");
+  assert.equal(musicianDump(dump), 3);
+  const at = (id: string) => dump.users.find((r) => r.path === `users/${id}`)!.data as Record<string, unknown>;
+  assert.deepEqual(at("u1").artists, [{ artistId: "A", role: "admin" }, { artistId: "B", role: "member", musicianId: "m1" }], "the musician's own artist");
+  assert.deepEqual(at("u2").artists, [{ artistId: "A", role: "member", musicianId: "m2" }], "an existing link is kept");
+  assert.deepEqual(at("u3").artists, [{ artistId: "A", role: "member", musicianId: "gone" }], "an unknown musician: the only membership takes it");
+  for (const id of ["u1", "u2", "u3", "u4"]) {
+    assert.equal("musicianId" in at(id), false);
+    assert.deepEqual(validateRow({ path: `users/${id}`, data: at(id) }), []);
+  }
+  assert.equal(musicianDump(dump), 0, "a second pass changes nothing");
 });

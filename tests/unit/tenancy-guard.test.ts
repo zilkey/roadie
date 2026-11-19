@@ -176,3 +176,14 @@ test("nothing in the app writes users.musicianId any more (it is read-only from 
   }
   assert.deepEqual(bad, []);
 });
+
+test("phase 7: nothing reads the old single musician link (users.musicianId, the musicianId claim, Profile.musicianId)", () => {
+  // A users doc or profile followed by `.musicianId`; a musician's own `musicianId` fields (lineups, plots, payouts) are fine.
+  const re = /\b(?:u|user|users\[\w+\]|profile|state\.profile|useProfile\(\)|before|live|existing|decoded|token|claims)\??\.musicianId\b/g;
+  const bad: string[] = [];
+  for (const f of ALL) {
+    const s = read(f);
+    for (const m of s.matchAll(re)) bad.push(`${f}:${lineOf(s, m.index!)} ${m[0]}`);
+  }
+  assert.deepEqual(bad, []);
+});

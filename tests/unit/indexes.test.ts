@@ -47,3 +47,14 @@ test("the plan's server indexes are there (D4, D7)", () => {
     assert.ok(has("history", "COLLECTION_GROUP", twin), `the (artistId, shared, …) twin of ${i.fields.map((f) => f.fieldPath).join(",")}`);
   }
 });
+
+test("phase 10: every kind that moves under its artist can be found across artists (collection-group id and artistId)", async () => {
+  const { OWNERS, PARENTS, movesUnderArtist } = await import("@/schema/owners");
+  const all = JSON.parse(readFileSync("firestore.indexes.json", "utf8")) as { fieldOverrides: { collectionGroup: string; fieldPath: string; indexes: { queryScope: string }[] }[] };
+  const cg = (k: string, f: string) => all.fieldOverrides.some((o) => o.collectionGroup === k && o.fieldPath === f && o.indexes.some((i) => i.queryScope === "COLLECTION_GROUP"));
+  const tops = Object.keys(OWNERS).filter((k) => movesUnderArtist(k) && !(PARENTS[k] && !PARENTS[k].keyedById));
+  // The system view's lookups by id (src/server/db.ts artistDir) and its whole-database queries filtered by artist.
+  assert.deepEqual(tops.flatMap((k) => ["id", "artistId"].filter((f) => !cg(k, f)).map((f) => `${k}.${f}`)), []);
+  // What the cross-artist hooks and venues.mergeInto filter on (src/server/denorm.ts, commands/booking.ts).
+  for (const [k, f] of [["shows", "venue.id"], ["shows", "editionId"], ["shows", "hostContactIds"], ["pitches", "target.id"], ["promoterNotes", "venueIds"], ["venueNotes", "venueId"]]) assert.ok(cg(k, f), `${k}.${f}`);
+});

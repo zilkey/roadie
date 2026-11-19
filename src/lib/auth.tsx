@@ -1,4 +1,5 @@
 "use client";
+import { setNestedPaths } from "@/schema/owners";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { ArtistContext } from "./artist";
 import { GoogleAuthProvider, onAuthStateChanged, signInWithCredential, signInWithPopup, signOut as fbSignOut, type User } from "firebase/auth";
@@ -10,8 +11,6 @@ export interface PendingInvite { id: string; artistId: string; artistName: strin
 export interface ArtistAccess { artistId: string; slug: string; name: string; role: "admin" | "member"; timeZone: string }
 export interface Profile {
   uid: string; userId: string; name: string; email: string; mcpAccess: boolean; artists: ArtistAccess[];
-  /** The old single musician link; read your musician in an artist from `useArtist().musicianId` instead. Removed in phase 7. */
-  musicianId?: string;
   /** Your musician in each artist you belong to (artistId -> musicianId). `useArtist().musicianId` reads this artist's. */
   musicians?: Record<string, string>;
   /** Approved to change shared directory records (venues, acts, promoters, festivals) by a platform admin. */
@@ -22,6 +21,10 @@ export interface Profile {
   sharedEditRequested?: boolean;
   /** Other artists asking you to join (the artist picker shows Join and Decline). */
   invites?: PendingInvite[];
+  /** Artist data lives under `artists/{id}/…` (tenancy phase 10): the Firestore hooks build their paths from it (`pathOf`). */
+  nestedPaths?: boolean;
+  /** Roadie is moving data and takes no changes for a few minutes (the banner says so). */
+  readOnly?: boolean;
 }
 type State =
   | { status: "loading" }
@@ -62,6 +65,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (res.status === 403 && json.error?.code === "not_invited") return { status: "notInvited", email: user.email ?? undefined };
     if (refused(res.status)) throw new Error(json.error?.message ?? "Sign-in failed");
     if (!res.ok) throw new Unreachable();
+    // Before any listener starts: every artist path is built for the layout the server is on.
+    setNestedPaths(json.nestedPaths === true);
     try { await user.getIdToken(true); } catch { throw new Unreachable(); } // pick up the new custom claims
     if (json.status === "noBand") return { status: "noBand", user, email: json.email ?? user.email ?? "", name: json.name ?? "", invites: json.invites ?? [] };
     return { status: "ready", user, profile: json as Profile };
@@ -150,7 +155,7 @@ export function useAuth() {
   return c;
 }
 /** Only inside an artist (/artists/[slug]): you, with your `role` in that artist. */
-export function useProfile(): Omit<Profile, "musicianId"> & { role: "admin" | "member" } {
+export function useProfile(): Profile & { role: "admin" | "member" } {
   const { state } = useAuth();
   const artist = useContext(ArtistContext);
   if (state.status !== "ready") throw new Error("useProfile before sign-in");

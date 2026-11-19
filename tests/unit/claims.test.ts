@@ -7,8 +7,10 @@ import { CLAIMS_MAX_BYTES, TOO_MANY_ARTISTS, assertClaimsFit, claimsBytes, claim
 const ms = (n: number) => Array.from({ length: n }, (_, i) => ({ artistId: `artist${String(i).padStart(14, "0")}`, role: i % 2 ? "member" : "admin", musicianId: `musician${String(i).padStart(12, "0")}` }));
 
 test("claimsFor: roles, the artists they're admin of, and their musician in each (ai memberships stay out)", () => {
-  const user = { musicianId: "m1", artists: [{ artistId: "a", role: "admin", musicianId: "m1" }, { artistId: "b", role: "member" }, { artistId: "c", role: "ai" }] };
-  assert.deepEqual(claimsFor(user), { artists: { a: "admin", b: "member" }, adminOf: ["a"], musicians: { a: "m1" }, musicianId: "m1" });
+  const user = { artists: [{ artistId: "a", role: "admin", musicianId: "m1" }, { artistId: "b", role: "member" }, { artistId: "c", role: "ai" }] };
+  assert.deepEqual(claimsFor(user), { artists: { a: "admin", b: "member" }, adminOf: ["a"], musicians: { a: "m1" } });
+  // Phase 7: an old users.musicianId (before the drop script ran) makes no claim of its own.
+  assert.deepEqual(claimsFor({ ...user, musicianId: "m1" }), claimsFor(user));
 });
 
 test("about eight artists fit; more are refused before anything is written", () => {

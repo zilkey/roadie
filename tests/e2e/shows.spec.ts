@@ -1,5 +1,5 @@
 import { test, expect, type Browser, type Page } from "@playwright/test";
-import { CAL, GMAIL, A, FIRESTORE } from "./env";
+import { CAL, GMAIL, A, FIRESTORE, bandRecords } from "./env";
 import { SEED, day, fmtPitchDate, mmmD } from "./dates";
 import { addDays } from "../../src/lib/shows";
 
@@ -317,7 +317,7 @@ test("Shows list: totals come from the show's money, even when its stored totals
   const cells = async () => [await row.locator("td.num").nth(0).innerText(), await row.locator("td.num").nth(1).innerText(), await row.getByTestId("shows-net").innerText()];
   const before = await cells();
   // Drop showDeals/{id}.totals the way an import leaves it, then put it back.
-  const url = `http://${FIRESTORE}/v1/projects/demo-band-tracker/databases/(default)/documents/showDeals/${id}`;
+  const url = `http://${FIRESTORE}/v1/projects/demo-band-tracker/databases/(default)/documents/${(await bandRecords(request))(`showDeals/${id}`)}`;
   const owner = { authorization: "Bearer owner" };
   const saved = ((await (await request.get(url, { headers: owner })).json()) as { fields: Record<string, unknown> }).fields;
   try {

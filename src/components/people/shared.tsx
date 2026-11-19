@@ -28,7 +28,8 @@ export function derivePeople(users: Row<User>[], musicians: Row<Musician>[], art
   const used = new Set<string>();
   const out: Person[] = [];
   for (const u of team) {
-    const m = musicians.find((x) => x.id === u.musicianId) ?? musicians.find((x) => x.userId === u.id);
+    const mid = (u.artists ?? []).find((x) => x.artistId === artistId)?.musicianId;
+    const m = musicians.find((x) => x.id === mid) ?? musicians.find((x) => x.userId === u.id);
     if (m) used.add(m.id);
     const role = roleIn(u, artistId) as "admin" | "member";
     out.push({ id: u.id, key: u.email || u.name, name: u.name || m?.name || u.email, email: u.email, u, m, band: !!m && !m.archivedAt, role, mcp: role === "admin" && mcpIn(u, artistId), archived: false, me: u.id === myUid });

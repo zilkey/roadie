@@ -2,6 +2,8 @@
  * The fan email list (stories 31, F3-F5). The public page talks to `listView` and `signup` (no login: the route files are thin);
  * the fans.* commands use the rest. Fan emails are private to the artist's admins: everything that leaves here for anyone else is a count.
  */
+import { pathOf } from "@/schema/owners";
+import { assertWritable } from "./layout";
 import { softChargeTo, type Charge } from "./usage";
 import { createHash } from "node:crypto";
 import { artistFlags } from "./platform";
@@ -296,5 +298,6 @@ export async function requireFan(w: Writer, id: string): Promise<Doc> {
 export async function deleteFan(ctx: Ctx, id: string): Promise<void> {
   const f = await db.get(ctx, "fans", id);
   if (!f) throw new AppError("not_found", "Fan not found", 404);
-  await firestore().recursiveDelete(firestore().doc(`fans/${id}`));
+  await assertWritable();
+  await firestore().recursiveDelete(firestore().collection(pathOf("fans", { artistId: ctx.artistId })).doc(id));
 }

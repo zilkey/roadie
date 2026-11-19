@@ -4,6 +4,7 @@
  * like routeCache). The plot itself keeps share.on and a SHA-256 hash of the token, which is what plotByToken checks. Turning the
  * link off deletes the token; turning it on again (or rotating) makes a new one.
  */
+import { linkedArtist } from "./links";
 import { timingSafeEqual } from "node:crypto";
 import { db, type Doc } from "./db";
 import { artistCtx, systemCtx, type Ctx } from "./ctx";
@@ -39,7 +40,7 @@ export async function saveToken(ctx: Ctx, plotId: string, token: string): Promis
  */
 export async function plotTokenArtist(plotId: string): Promise<string> {
   const s = await tokenDoc(plotId).get();
-  const artistId = s.exists ? ((s.data()!.artistId as string | undefined) ?? ((await db.get(systemCtx("plot link"), "stagePlots", plotId))?.artistId as string | undefined)) : undefined;
+  const artistId = s.exists ? ((s.data()!.artistId as string | undefined) ?? (await linkedArtist("stagePlots", plotId)) ?? ((await db.get(systemCtx("plot link"), "stagePlots", plotId))?.artistId as string | undefined)) : undefined;
   if (!artistId) throw new AppError("invalid_link", "This link is not valid any more. Ask the band for a new one.", 403);
   return artistId;
 }

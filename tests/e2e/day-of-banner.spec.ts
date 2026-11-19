@@ -1,5 +1,5 @@
 import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
-import { A, FIRESTORE } from "./env";
+import { A, FIRESTORE, bandRecords } from "./env";
 import { SEED } from "./dates";
 
 // The day-of banner (#66). The banner runs on the real clock, so the show and the rehearsal here are written straight into the
@@ -23,7 +23,7 @@ function denver(at: number) {
 }
 
 async function seeded(request: APIRequestContext, collection: string, match: (f: Fields) => boolean): Promise<Fields> {
-  const res = await request.get(`${DOCS}/${collection}?pageSize=300`, { headers: OWNER });
+  const res = await request.get(`${DOCS}/${(await bandRecords(request))(collection)}?pageSize=300`, { headers: OWNER });
   const docs = ((await res.json()) as { documents: { fields: Fields }[] }).documents;
   const found = docs.find((d) => match(d.fields));
   if (!found) throw new Error(`no seeded ${collection} doc to copy`);
@@ -39,14 +39,14 @@ async function putShow(request: APIRequestContext, loadInAt: number) {
   // the seeded show itself (not a Deep End show an earlier spec made), so the copy is the same every run
   const base = await seeded(request, "shows", (f) => nameOf(f, "venue") === "Deep End" && (f.date as { stringValue?: string } | undefined)?.stringValue === SEED.deepEnd);
   const t = denver(loadInAt);
-  await put(request, `shows/${SHOW}`, { ...base, date: str(t.date), status: str("confirmed"), times: { mapValue: { fields: { loadIn: str(t.time) } } } });
+  await put(request, (await bandRecords(request))(`shows/${SHOW}`), { ...base, date: str(t.date), status: str("confirmed"), times: { mapValue: { fields: { loadIn: str(t.time) } } } });
   return t;
 }
 /** A rehearsal at the Attic starting at `startAt`, with no end time. */
 async function putRehearsal(request: APIRequestContext, startAt: number) {
   const { endTime: _end, ...base } = await seeded(request, "rehearsals", (f) => nameOf(f, "location") === "The Attic");
   const t = denver(startAt);
-  await put(request, `rehearsals/${REHEARSAL}`, { ...base, date: str(t.date), startTime: str(t.time) });
+  await put(request, (await bandRecords(request))(`rehearsals/${REHEARSAL}`), { ...base, date: str(t.date), startTime: str(t.time) });
   return t;
 }
 async function uidOf(request: APIRequestContext, email: string) {
@@ -61,8 +61,9 @@ async function clearDismissed(request: APIRequestContext, email: string) {
   if (has.ok()) await request.patch(`${DOCS}/userPrefs/${uid}?updateMask.fieldPaths=dayOfDismissed`, { headers: OWNER, data: { fields: {} } });
 }
 async function cleanUp(request: APIRequestContext) {
-  await request.delete(`${DOCS}/shows/${SHOW}`, { headers: OWNER });
-  await request.delete(`${DOCS}/rehearsals/${REHEARSAL}`, { headers: OWNER });
+  const rec = await bandRecords(request);
+  await request.delete(`${DOCS}/${rec(`shows/${SHOW}`)}`, { headers: OWNER });
+  await request.delete(`${DOCS}/${rec(`rehearsals/${REHEARSAL}`)}`, { headers: OWNER });
   for (const email of ["rudy@example.com", "hugo@example.com"]) await clearDismissed(request, email);
 }
 

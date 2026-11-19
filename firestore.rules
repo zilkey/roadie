@@ -10,6 +10,9 @@ rules_version = '2';
 // must therefore filter `artistId == <artist>` (the browser hooks add it, src/lib/client-scope.ts); an unfiltered list is refused.
 // A collection-group wildcard ({path=**}) is used only for tracks and history (tests/unit/rules-shape.test.ts): rules OR together, so
 // a wildcard `comments` match would widen pitch comments.
+// Tenancy phase 10 moves artist records under their artist (`artists/{a}/shows/{id}`, platform/config.nestedPaths). Both layouts have
+// rules here, so the browser works before, during and after the move; the top-level artist matches go once the old copies are deleted
+// (scripts/delete-flat-copies.ts).
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn()    { return request.auth != null; }
@@ -30,6 +33,8 @@ service cloud.firestore {
     // A get of a doc that doesn't exist (a show with no deal yet, an id of "none") reads as "doesn't exist" instead of failing on
     // resource.data, for anyone with a role in an artist. It only reveals that an id is unused, and ids are random.
     function missing()     { return anyRole() && resource == null; }
+    // The same, for a doc under artists/{a}/… (phase 10): anyone with a role in that artist.
+    function missingIn(a)  { return roleIn(a) != '' && resource == null; }
 
     // ---------- People ----------
     // A person reads their own users doc (My settings); an admin reads the people of the artists they run (People, driving & gas).
@@ -55,7 +60,79 @@ service cloud.firestore {
     match /fuelPrices/{id}        { allow read: if signedIn(); }
 
     // ---------- The artist itself (its id is the artistId) ----------
-    match /artists/{id}           { allow get: if admin(id) || (member(id) && live()); }
+    match /artists/{a} {
+      allow get: if admin(a) || (member(a) && live());
+
+      // ---------- Phase 10: the artist's records under its own doc (artists/{a}/shows/{id}) ----------
+      // Path-based: the role is checked in the artist the path names. Every record also keeps its `artistId` (always equal to {a},
+      // scripts/migrate-nested.ts checks it), and the browser still filters on it, so the same queries run in either layout.
+      // A get of a missing doc reads as "doesn't exist" for anyone with a role in {a} (missingIn).
+      match /shows/{id} {
+        allow get: if missingIn(a) || inArtist(a);
+        allow list: if inArtist(a);
+        match /comments/{cid} { allow read: if admin(a) || (member(a) && live() && resource.data.get('audience', '') == 'band'); }
+      }
+      match /tours/{id} {
+        allow get: if missingIn(a) || inArtist(a);
+        allow list: if inArtist(a);
+        match /entries/{eid} { allow read: if admin(a) || (member(a) && live() && resource.data.get('visibility', '') == 'band'); }
+      }
+      match /projects/{id}          { allow get: if missingIn(a) || inArtist(a); allow list: if inArtist(a); }
+      match /songs/{id}             { allow get: if missingIn(a) || inArtist(a); allow list: if inArtist(a); }
+      match /files/{id}             { allow get: if missingIn(a) || inArtist(a); allow list: if inArtist(a); }
+      match /setlists/{id}          { allow get: if missingIn(a) || inArtist(a); allow list: if inArtist(a); }
+      match /setlistTemplates/{id}  { allow get: if missingIn(a) || inArtist(a); allow list: if inArtist(a); }
+      match /rehearsals/{id}        { allow get: if missingIn(a) || inArtist(a); allow list: if inArtist(a); }
+      match /stagePlots/{id}        { allow get: if missingIn(a) || inArtist(a); allow list: if inArtist(a); }
+      match /musicians/{id}         { allow get: if missingIn(a) || inArtist(a); allow list: if inArtist(a); }
+      match /expenses/{id} {
+        allow get: if missingIn(a) || admin(a) || (member(a) && live() && resource.data.userId == me());
+        allow list: if admin(a) || (member(a) && live() && resource.data.userId == me());
+      }
+      match /availability/{id} {
+        allow get: if missingIn(a) || admin(a) || (member(a) && live() && myMusician(a) != '' && myMusician(a) in resource.data.get('askedMusicianIds', []));
+        allow list: if admin(a) || (member(a) && live() && myMusician(a) != '' && myMusician(a) in resource.data.get('askedMusicianIds', []));
+      }
+      match /payouts/{id} {
+        allow get: if missingIn(a) || admin(a) || (member(a) && live()
+          && (resource.data.get('to', {}).get('userId', '') == me()
+              || (myMusician(a) != '' && resource.data.get('to', {}).get('musicianId', '') == myMusician(a))));
+        allow list: if admin(a) || (member(a) && live()
+          && (resource.data.get('to', {}).get('userId', '') == me()
+              || (myMusician(a) != '' && resource.data.get('to', {}).get('musicianId', '') == myMusician(a))));
+      }
+      match /releases/{id} {
+        allow get: if missingIn(a) || admin(a);
+        allow list: if admin(a);
+        match /tracks/{t} { allow read: if admin(a); }
+      }
+      match /income/{id}            { allow get: if missingIn(a) || admin(a); allow list: if admin(a); }
+      match /showDeals/{id}         { allow get: if missingIn(a) || admin(a); allow list: if admin(a); }
+      match /emailTemplates/{id}    { allow get: if missingIn(a) || admin(a); allow list: if admin(a); }
+      match /statSnapshots/{id}     { allow get: if missingIn(a) || admin(a); allow list: if admin(a); }
+      match /contacts/{id}          { allow get: if missingIn(a) || admin(a); allow list: if admin(a); }
+      match /venueNotes/{id}        { allow get: if missingIn(a) || admin(a); allow list: if admin(a); }
+      match /venueEventNotes/{id}   { allow get: if missingIn(a) || admin(a); allow list: if admin(a); }
+      match /actNotes/{id}          { allow get: if missingIn(a) || admin(a); allow list: if admin(a); }
+      match /festivalNotes/{id}     { allow get: if missingIn(a) || admin(a); allow list: if admin(a); }
+      match /editionNotes/{id}      { allow get: if missingIn(a) || admin(a); allow list: if admin(a); }
+      match /promoterNotes/{id}     { allow get: if missingIn(a) || admin(a); allow list: if admin(a); }
+      match /contactNotes/{id}      { allow get: if missingIn(a) || admin(a); allow list: if admin(a); }
+      match /checklistTemplates/{id} { allow get: if missingIn(a) || admin(a); allow list: if admin(a); }
+      match /emailThreads/{id}      { allow get: if missingIn(a) || admin(a); allow list: if admin(a); }
+      match /posts/{id}             { allow get: if missingIn(a) || admin(a); allow list: if admin(a); }
+      match /todos/{id}             { allow get: if missingIn(a) || admin(a); allow list: if admin(a); }
+      match /fans/{id}              { allow get: if missingIn(a) || admin(a); allow list: if admin(a); }
+      match /campaigns/{id}         { allow get: if missingIn(a) || admin(a); allow list: if admin(a); }
+      match /socialChecklists/{id}  { allow read: if admin(a); }
+      match /pitches/{id} {
+        allow get: if missingIn(a) || admin(a);
+        allow list: if admin(a);
+        match /comments/{cid}  { allow read: if admin(a); }
+        match /activity/{aid}  { allow read: if admin(a); }
+      }
+      // Not here (they stay top level, still with artistId): mcpTokens, shortcutTokens, invites, assistantThreads.
+    }
     match /socialChecklists/{id}  { allow read: if admin(id); }
 
     // ---------- Artist: the whole artist reads ----------

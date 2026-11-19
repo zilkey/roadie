@@ -36,6 +36,8 @@ import { kindOf } from "@/schema";
 import { OWNERS, PARENTS, ownerOf } from "@/schema/owners";
 import { artistIdsOf, type Membership } from "@/schema/users";
 import { snapshotId } from "@/server/commands/stats";
+/** A statSnapshot's id before tenancy phase 2: `{source}_{date}`. */
+export const legacySnapshotId = (source: unknown, date: unknown) => `${source}_${date}`;
 
 /** Fields that name an artist record: the record they point at is a parent (step 2). */
 export const REF_FIELDS: Record<string, string> = {
@@ -176,7 +178,7 @@ export async function migrateTenancy(opts: { artist: string; apply: boolean; fs?
     if ("orphan" in res) { report.orphans.push({ path: r.ref.path, reason: res.orphan }); continue; }
     resolvedArtist.set(r.ref.path, res.artistId);
     inc(kc.byArtist, res.artistId);
-    const oldSnapshot = r.kind === "statSnapshots" && r.ref.id === snapshotId(undefined, r.data.source, r.data.date);
+    const oldSnapshot = r.kind === "statSnapshots" && r.ref.id === legacySnapshotId(r.data.source, r.data.date);
     if (oldSnapshot) {
       const newId = snapshotId(res.artistId, r.data.source, r.data.date);
       if (recs.has(`statSnapshots/${newId}`)) { report.conflicts.push({ path: r.ref.path, reason: `statSnapshots/${newId} already exists` }); continue; }
@@ -314,7 +316,7 @@ export async function undoSnapshots(opts: { apply: boolean; fs?: Firestore }): P
   const sameTime = (x: unknown, y: unknown) => !!x && !!y && typeof (x as { isEqual?: unknown }).isEqual === "function" && (x as FirebaseFirestore.Timestamp).isEqual(y as FirebaseFirestore.Timestamp);
   for (const d of all.docs) {
     const a = str(d.get("artistId"));
-    const twin = byId.get(snapshotId(undefined, d.get("source"), d.get("date")));
+    const twin = byId.get(legacySnapshotId(d.get("source"), d.get("date")));
     if (!a || d.id !== snapshotId(a, d.get("source"), d.get("date")) || !twin || !sameTime(twin.get("createdAt"), d.get("createdAt"))) continue;
     paths.push(d.ref.path);
     if (!opts.apply) continue;

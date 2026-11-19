@@ -9,7 +9,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { ownerOf } from "@/schema/owners";
+import { OWNERS, movesUnderArtist, ownerOf } from "@/schema/owners";
 
 const rules = readFileSync("firestore.rules", "utf8").replace(/\/\/.*$/gm, "");
 
@@ -73,4 +73,17 @@ test("every artist kind's rule checks a role in an artist", () => {
     const body = rules.slice(at, rules.indexOf("allow", at) + 400).split(/\n\s*match\s/)[0];
     assert.match(body, /\b(admin|inArtist|member)\(/, `${m} must check a role in an artist`);
   }
+});
+
+test("phase 10: every artist kind that moves has a path-based rule under artists/{a}, and the ones that stay top level don't", () => {
+  const found = new Set(matches(rules));
+  const moving = Object.keys(OWNERS).filter(movesUnderArtist);
+  // Kinds the browser never reads have no rule in either layout (server only).
+  const readByBrowser = moving.filter((k) => found.has(k));
+  assert.deepEqual(readByBrowser.filter((k) => !found.has(`artists/${k}`)), []);
+  for (const sub of ["shows/comments", "tours/entries", "pitches/comments", "pitches/activity", "releases/tracks"]) assert.ok(found.has(`artists/${sub}`), sub);
+  for (const top of ["mcpTokens", "assistantThreads", "invites", "shortcutTokens"]) assert.ok(!found.has(`artists/${top}`), top);
+  // Nested rules check the role in the artist the path names ({a}), never the record's own field.
+  const nested = rules.slice(rules.indexOf("match /artists/{a}"), rules.indexOf("match /socialChecklists/{id}  { allow read: if admin(id)"));
+  assert.doesNotMatch(nested, /\bA\(\)/);
 });

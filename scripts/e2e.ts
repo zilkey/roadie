@@ -62,7 +62,8 @@ async function runShard(n: number): Promise<{ n: number; ok: boolean; seconds: n
   const started = Date.now();
   const out = fs.createWriteStream(file);
   const child = spawn("npx", ["firebase", "emulators:exec", "--config", config, "--only", "firestore,auth", "--project", "demo-band-tracker", `tsx scripts/seed.ts && ${playwright}`], {
-    env: { ...process.env, TEST_PORT_OFFSET: String(offset), E2E_SHARD: String(n), GCLOUD_PROJECT: "demo-band-tracker", FORCE_COLOR: "0" },
+    // Artist data nested under artists/{id}/… (tenancy phase 10's target) unless ROADIE_NESTED_PATHS=0: the seed and the app server agree.
+    env: { ...process.env, ROADIE_NESTED_PATHS: process.env.ROADIE_NESTED_PATHS ?? "1", TEST_PORT_OFFSET: String(offset), E2E_SHARD: String(n), GCLOUD_PROJECT: "demo-band-tracker", FORCE_COLOR: "0" },
     stdio: ["ignore", "pipe", "pipe"],
   });
   let pending = "";

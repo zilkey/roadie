@@ -6,6 +6,7 @@ import { useAuth } from "./auth";
 import { useBusyWhile } from "./busy";
 import { useMaybeArtist } from "./artist";
 import { scopeQuery, scopedDocPath } from "./client-scope";
+import { inLayout } from "@/schema/owners";
 
 export type Row<T> = T & { id: string };
 type Where = [field: string, op: WhereFilterOp, value: unknown];
@@ -29,7 +30,7 @@ export function useCollection<T = Record<string, unknown>>(path: string, opts: {
   const [rows, setRows] = useState<Row<T>[] | null>(null);
   const [fromCache, setFromCache] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const key = JSON.stringify([path, opts, artistId]);
+  const key = JSON.stringify([path, opts, artistId, scoped?.path]);
   useEffect(() => {
     if (!ready || !scoped) return;
     const cs = [
@@ -39,7 +40,8 @@ export function useCollection<T = Record<string, unknown>>(path: string, opts: {
     return onSnapshot(
       query(opts.group ? collectionGroup(clientDb(), scoped.path) : collection(clientDb(), scoped.path), ...cs),
       { includeMetadataChanges: !!opts.waitForServer },
-      (s) => { setRows(s.docs.map((d) => ({ ...(d.data() as T), id: d.id }))); setFromCache(s.metadata.fromCache); setError(null); },
+      // A collection group also finds the copies the other layout still holds (tenancy phase 10, before the old ones are deleted).
+      (s) => { setRows(s.docs.filter((d) => !opts.group || inLayout(d.ref.path)).map((d) => ({ ...(d.data() as T), id: d.id }))); setFromCache(s.metadata.fromCache); setError(null); },
       (e) => setError(e.message),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps

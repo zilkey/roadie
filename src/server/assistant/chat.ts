@@ -1,4 +1,5 @@
 import { spend } from "../usage";
+import { assertWritable } from "../layout";
 import { authenticate } from "../commands/dispatch";
 import { setOpenThread } from "../commands/assistant";
 import { db } from "../db";
@@ -26,6 +27,8 @@ export async function handleChat(authHeader: string | null, body: unknown, artis
     if (ctx.role !== "admin") throw new AppError("forbidden", "Roadie is for admins", 403);
     const parsed = ChatRequest.safeParse(body ?? {});
     if (!parsed.success) throw invalid(parsed.error);
+    // Phase 10's copy window: no new turn (its transcript and anything it would change can't be written).
+    await assertWritable();
     // One Roadie message a day's limit counts (tenancy phase 9): before any write, so a refused message leaves nothing behind.
     await spend(ctx, "roadieMessages");
     const req = parsed.data;

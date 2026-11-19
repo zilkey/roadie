@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { OWNERS, ownerOf, pathOf } from "@/schema/owners";
+import { OWNERS, inLayout, nestedPaths, ownerOf, pathOf, physicalPath, setNestedPaths, splitPath } from "@/schema/owners";
 import { collections } from "@/schema";
 import { SERVER_KEPT } from "@/server/backup";
 import { SHARED_KINDS } from "@/server/platform";
@@ -51,7 +51,13 @@ test("the Writer's shared kinds are the owner table's", () => {
   for (const k of ["venues", "acts", "promoters", "festivals", "editions", "venueTypes"]) assert.equal(ownerOf(k), "shared");
 });
 
-test("pathOf: top-level kinds are their name; sub-collections live under their parent; artist kinds need the artist", () => {
+/** Run `fn` with artist data top level, then nested (tenancy phase 10). */
+function layoutIs(nest: boolean, fn: () => void) {
+  const was = nestedPaths();
+  try { setNestedPaths(nest); fn(); } finally { setNestedPaths(was); }
+}
+
+test("pathOf: top-level kinds are their name; sub-collections live under their parent; artist kinds need the artist", () => layoutIs(false, () => {
   assert.equal(pathOf("shows", { artistId: "a1" }), "shows");
   assert.equal(pathOf("venues"), "venues");
   assert.equal(pathOf("showDeals", { artistId: "a1" }), "showDeals");
@@ -61,4 +67,35 @@ test("pathOf: top-level kinds are their name; sub-collections live under their p
   assert.throws(() => pathOf("comments", { artistId: "a1" }), /needs its parent/);
   assert.throws(() => pathOf("tracks", { artistId: "a1", parent: { kind: "shows", id: "s1" } }), /doesn't live under/);
   assert.throws(() => pathOf("nope"), /No owner/);
+}));
+
+test("phase 10, nested: artist records live under their artist; shared, person, server and top-level-kept kinds don't move", () => layoutIs(true, () => {
+  assert.equal(pathOf("shows", { artistId: "a1" }), "artists/a1/shows");
+  assert.equal(pathOf("showDeals", { artistId: "a1" }), "artists/a1/showDeals");
+  assert.equal(pathOf("comments", { artistId: "a1", parent: { kind: "pitches", id: "p1" } }), "artists/a1/pitches/p1/comments");
+  assert.equal(pathOf("tracks", { artistId: "a1", parent: { kind: "releases", id: "r1" } }), "artists/a1/releases/r1/tracks");
+  for (const k of ["mcpTokens", "shortcutTokens", "invites", "assistantThreads"]) assert.equal(pathOf(k, { artistId: "a1" }), k);
+  assert.equal(pathOf("messages", { parent: { kind: "assistantThreads", id: "t1" } }), "assistantThreads/t1/messages");
+  assert.equal(pathOf("venues"), "venues");
+  assert.equal(pathOf("users"), "users");
+  assert.throws(() => pathOf("shows"), /needs the artistId/);
+  assert.throws(() => physicalPath("pitches/p1/comments", undefined), /artistId is needed/);
+}));
+
+test("phase 10: stored paths map back to logical ones, and each layout sees only its own copies", () => {
+  assert.deepEqual(splitPath("artists/a1/shows/s1/history/000001"), { logical: "shows/s1/history/000001", artistId: "a1" });
+  assert.deepEqual(splitPath("artists/a1/shows"), { logical: "shows", artistId: "a1" });
+  assert.deepEqual(splitPath("shows/s1"), { logical: "shows/s1" });
+  // The artist's own doc and its History never move; nor do kinds kept top level.
+  assert.deepEqual(splitPath("artists/a1/history/000001"), { logical: "artists/a1/history/000001" });
+  assert.deepEqual(splitPath("artists/a1"), { logical: "artists/a1" });
+  for (const nest of [false, true]) {
+    assert.equal(inLayout("artists/a1/shows/s1/history/000001", nest), nest);
+    assert.equal(inLayout("shows/s1/history/000001", nest), !nest);
+    assert.equal(inLayout("venues/v1/history/000001", nest), true);
+    assert.equal(inLayout("artists/a1/history/000001", nest), true);
+    assert.equal(inLayout("assistantThreads/t1/messages/m1", nest), true);
+  }
+  assert.equal(physicalPath("shows/s1/history", "a1", true), "artists/a1/shows/s1/history");
+  assert.equal(physicalPath("shows/s1/history", "a1", false), "shows/s1/history");
 });

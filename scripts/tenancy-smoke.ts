@@ -21,6 +21,8 @@
  *
  * Writes nothing to Firestore.
  */
+import { layout } from "@/server/layout";
+import { inLayout, movesUnderArtist, physicalPath, splitPath } from "@/schema/owners";
 import fs from "node:fs";
 import { deleteApp, initializeApp, type FirebaseApp } from "firebase/app";
 import { connectAuthEmulator, getAuth, signInWithCustomToken } from "firebase/auth";
@@ -68,6 +70,9 @@ async function main() {
   if (!project && !process.env.FIRESTORE_EMULATOR_HOST) throw new Error("Set GCLOUD_PROJECT (and GOOGLE_APPLICATION_CREDENTIALS for prod)");
   console.log(`tenancy smoke: ${process.env.FIRESTORE_EMULATOR_HOST ? `emulator ${process.env.FIRESTORE_EMULATOR_HOST}` : project}, artist ${named}`);
   const db = firestore();
+  // Phase 10: artist data top level or under artists/{id}/… (platform/config.nestedPaths); every path below follows it.
+  const { nestedPaths: nested } = await layout();
+  console.log(`artist data: ${nested ? "nested under artists/{id}" : "top level"}`);
   const fails: string[] = [];
   const artist = (await db.doc(`artists/${named}`).get()).exists ? named : (await db.collection("artists").where("slug", "==", named).limit(1).get()).docs[0]?.id;
   if (!artist) throw new Error(`no artist ${named}`);
@@ -76,10 +81,12 @@ async function main() {
   const ownerOfId = new Map<string, string>(); // "kind/id" -> artistId
   const live: Record<string, number> = {}, counts: Record<string, Record<string, number>> = {};
   for (const kind of ARTIST_KINDS) {
-    const snap = SUBS.has(kind) ? await db.collectionGroup(kind).get() : await db.collection(kind).get();
+    const group = SUBS.has(kind) || (nested && movesUnderArtist(kind));
+    const snap = group ? await db.collectionGroup(kind).get() : await db.collection(kind).get();
     const per = (counts[kind] = {} as Record<string, number>);
-    for (const d of snap.docs) {
+    for (const d of snap.docs.filter((x) => inLayout(x.ref.path) && (SUBS.has(kind) || splitPath(x.ref.parent.path).logical === kind))) {
       if (kind === "comments" || kind === "activity") { if (!["shows", "pitches"].includes(d.ref.parent.parent?.parent.id ?? "")) continue; }
+      if (nested && splitPath(d.ref.path).artistId && splitPath(d.ref.path).artistId !== d.get("artistId")) fails.push(`${d.ref.path}: artistId ${d.get("artistId")} under another artist`);
       const a = d.get("artistId");
       if (typeof a !== "string" || !a) { fails.push(`${d.ref.path}: no artistId`); continue; }
       per[a] = (per[a] ?? 0) + 1;
@@ -165,6 +172,7 @@ async function signedIn(name: string, claims: Record<string, unknown>): Promise<
 
 /** Runs the browser's query shapes as --artist's admin and member, and the same shapes for an artist they aren't in. */
 async function rulesCheck(artist: string, adminDb: ReturnType<typeof firestore>, fails: string[]) {
+  const { nestedPaths: nested } = await layout();
   console.log("\nbrowser reads through firestore.rules (client SDK, uid tenancy-smoke):");
   const musician = `${SMOKE_UID}-musician`;
   const admin = await signedIn("admin", { artists: { [artist]: "admin" }, adminOf: [artist], musicians: {} });
@@ -182,11 +190,12 @@ async function rulesCheck(artist: string, adminDb: ReturnType<typeof firestore>,
   const parentOf = async (kind: string): Promise<string | null> => {
     const parentKind = ({ comments: "shows", entries: "tours", activity: "pitches", tracks: "releases" } as Record<string, string>)[kind];
     if (!parentKind) return kind;
-    const p = (await adminDb.collection(parentKind).where("artistId", "==", artist).limit(1).get()).docs[0];
+    const p = (await adminDb.collection(physicalPath(parentKind, artist)).where("artistId", "==", artist).limit(1).get()).docs[0];
     return p ? `${parentKind}/${p.id}/${kind}` : null;
   };
+  /** A list as the hooks send it, for `artistId`: in the nested layout under that artist's own path. */
   const list = (c: ClientDb, path: string, artistId: string, ...w: QueryConstraint[]) =>
-    getDocs(query(collection(c, path), where("artistId", "==", artistId), ...w, where("deletedAt", "==", null), limit(3)));
+    getDocs(query(collection(c, physicalPath(path, artistId)), where("artistId", "==", artistId), ...w, where("deletedAt", "==", null), limit(3)));
 
   for (const kind of Object.keys(OWNERS).filter((k) => ownerOf(k) === "artist" && !NOT_LISTED.has(k))) {
     const path = await parentOf(kind);
@@ -230,14 +239,17 @@ async function rulesCheck(artist: string, adminDb: ReturnType<typeof firestore>,
   // Gets by id.
   await run("admin gets the artist", "allow", () => getDoc(doc(admin.c, "artists", artist)));
   await run("member gets the artist", "allow", () => getDoc(doc(member.c, "artists", artist)));
-  await run("admin gets the social checklists", "allow", () => getDoc(doc(admin.c, "socialChecklists", artist)));
-  await run("admin gets a missing show", "allow", () => getDoc(doc(admin.c, "shows", "tenancy-smoke-none")));
-  await run("member gets a missing deal", "allow", () => getDoc(doc(member.c, "showDeals", "tenancy-smoke-none")));
-  const show = (await adminDb.collection("shows").where("artistId", "==", artist).limit(1).get()).docs[0];
+  const at = (kind: string) => physicalPath(kind, artist);
+  await run("admin gets the social checklists", "allow", () => getDoc(doc(admin.c, at("socialChecklists"), artist)));
+  await run("admin gets a missing show", "allow", () => getDoc(doc(admin.c, at("shows"), "tenancy-smoke-none")));
+  await run("member gets a missing deal", "allow", () => getDoc(doc(member.c, at("showDeals"), "tenancy-smoke-none")));
+  if (nested) await run("admin gets a missing show of another artist", "deny", () => getDoc(doc(admin.c, physicalPath("shows", NOBODY), "tenancy-smoke-none")));
+  const show = (await adminDb.collection(at("shows")).where("artistId", "==", artist).limit(1).get()).docs[0];
   if (show) {
-    await run("admin gets a show", "allow", () => getDoc(doc(admin.c, "shows", show.id)));
-    const other = (await adminDb.collection("shows").limit(50).get()).docs.find((d) => d.get("artistId") !== artist);
-    if (other) await run("admin gets another artist's show", "deny", () => getDoc(doc(admin.c, "shows", other.id)));
+    await run("admin gets a show", "allow", () => getDoc(doc(admin.c, show.ref.path)));
+    const others = nested ? (await adminDb.collectionGroup("shows").limit(200).get()).docs.filter((d) => inLayout(d.ref.path)) : (await adminDb.collection("shows").limit(50).get()).docs;
+    const other = others.find((d) => d.get("artistId") !== artist);
+    if (other) await run("admin gets another artist's show", "deny", () => getDoc(doc(admin.c, other.ref.path)));
   }
   for (const x of [admin, member]) { await terminate(x.c); await deleteApp(x.app); }
   console.log(`  ${allowed} allowed and ${denied} denied as expected${fails.length ? `; ${fails.length} problems` : ""}`);

@@ -9,6 +9,8 @@
  * (src/server/meta/media.ts), which renders it from Drive, so nothing outside Drive keeps a copy. Files uploaded on Posts go
  * to Drive first (/api/posts/upload), into the Socials root.
  */
+import { pathOf } from "@/schema/owners";
+import { layout } from "../layout";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { defineCommand } from "./types";
@@ -356,8 +358,9 @@ export const postsGet = defineCommand({
     }
     // A photo edited in Drive since: keep its new modifiedTime (it signs the thumbnail). Not an edit, so not in history.
     let media = post.media;
-    if (fresh.size) {
-      const ref = firestore().doc(`posts/${id}`);
+    // Not during phase 10's copy window (read-only): the photos still show; the new time is kept next time.
+    if (fresh.size && !(await layout()).readOnly) {
+      const ref = firestore().collection(pathOf("posts", { artistId: ctx.artistId })).doc(id);
       media = await firestore().runTransaction(async (tx) => {
         const snap = (await tx.get(ref)).data();
         if (snap?.artistId !== ctx.artistId) throw new AppError("not_found", "That post isn't there", 404);

@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { dispatch } from "@/server/commands/dispatch";
 import { dayOfDismissed } from "@/server/prefs";
 import { firestore } from "@/server/admin";
-import { resetEmulators, makeUser, TEST_ARTIST } from "./helpers";
+import { at, resetEmulators, makeUser, TEST_ARTIST } from "./helpers";
 
 beforeEach(resetEmulators);
 
@@ -19,10 +19,10 @@ test("dayOf.dismiss: stored in the caller's prefs per artist, per show or rehear
   const fs = firestore();
   // Today in the band's zone: dismissals older than a week are pruned, so a fixed date stops working once it is past.
   const day = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Denver" }).format(new Date());
-  await fs.doc("shows/s1").set({ date: day, status: "confirmed", artistId: TEST_ARTIST, times: { loadIn: "17:00" }, deletedAt: null });
-  await fs.doc("shows/other").set({ date: day, status: "confirmed", artistId: "another-artist", times: {}, deletedAt: null });
-  await fs.doc("shows/gone").set({ date: day, status: "confirmed", artistId: TEST_ARTIST, times: {}, deletedAt: new Date() });
-  await fs.doc("rehearsals/r1").set({ artistId: TEST_ARTIST, date: day, startTime: "19:00", personnel: [], songs: [], deletedAt: null });
+  await fs.doc(at("shows/s1")).set({ date: day, status: "confirmed", artistId: TEST_ARTIST, times: { loadIn: "17:00" }, deletedAt: null });
+  await fs.doc(at("shows/other", "another-artist")).set({ date: day, status: "confirmed", artistId: "another-artist", times: {}, deletedAt: null });
+  await fs.doc(at("shows/gone")).set({ date: day, status: "confirmed", artistId: TEST_ARTIST, times: {}, deletedAt: new Date() });
+  await fs.doc(at("rehearsals/r1")).set({ artistId: TEST_ARTIST, date: day, startTime: "19:00", personnel: [], songs: [], deletedAt: null });
   const call = (tok: string, body: unknown) => dispatch("dayOf.dismiss", `Bearer ${tok}`, body, TEST_ARTIST);
 
   const res = await call(rudy.token, { kind: "show", id: "s1" });
@@ -40,7 +40,7 @@ test("dayOf.dismiss: stored in the caller's prefs per artist, per show or rehear
   assert.deepEqual(await dayOfDismissed(rudy.uid, "another-artist"), [], "kept per artist");
 
   // Nothing is written on the show, and the other prefs stay.
-  assert.equal((await fs.doc("shows/s1").get()).data()?.dismissed, undefined);
+  assert.equal((await fs.doc(at("shows/s1")).get()).data()?.dismissed, undefined);
   await dispatch("calendar.setTours", `Bearer ${rudy.token}`, { on: true }, TEST_ARTIST);
   await call(rudy.token, { kind: "show", id: "s1" });
   assert.equal((await fs.doc(`userPrefs/${rudy.uid}`).get()).data()?.calendarTours, true);
@@ -58,7 +58,7 @@ test("dayOf.dismiss drops dismissals older than a week as it goes", async () => 
   const rudy = await makeUser("rudy@example.com", "admin");
   const fs = firestore();
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Denver" }).format(new Date());
-  await fs.doc("shows/s1").set({ date: today, status: "confirmed", artistId: TEST_ARTIST, times: {}, deletedAt: null });
+  await fs.doc(at("shows/s1")).set({ date: today, status: "confirmed", artistId: TEST_ARTIST, times: {}, deletedAt: null });
   await fs.doc(`userPrefs/${rudy.uid}`).set({ uid: rudy.uid, dayOfDismissed: { [TEST_ARTIST]: ["show:old:2020-01-01", `rehearsal:r:${today}`], elsewhere: ["show:x:2020-01-01"] } });
   assert.equal((await dispatch("dayOf.dismiss", `Bearer ${rudy.token}`, { kind: "show", id: "s1" }, TEST_ARTIST)).status, 200);
   assert.deepEqual(await dayOfDismissed(rudy.uid, TEST_ARTIST), [`rehearsal:r:${today}`, `show:s1:${today}`]);

@@ -1,4 +1,5 @@
 import { adminAuth } from "./admin";
+import { layout } from "./layout";
 import { db, type Doc } from "./db";
 import { personCtx, systemCtx, type PersonCtx } from "./ctx";
 import { pendingInvitesFor } from "./commands/invites";
@@ -12,23 +13,11 @@ import { DEFAULT_TIME_ZONE } from "@/lib/timezone";
 export interface ArtistAccess { artistId: string; slug: string; name: string; role: "admin" | "member"; timeZone: string }
 
 /**
- * The custom claims for a users doc: `{artists: {artistId: role}, adminOf: [artistId], musicians: {artistId: musicianId}, musicianId?}`.
- * Firestore rules read `artists` (from tenancy phase 6 also `adminOf` and `musicians`). `musicianId` goes away in phase 7.
+ * The custom claims for a users doc: `{artists: {artistId: role}, adminOf: [artistId], musicians: {artistId: musicianId}}`. Firestore
+ * rules read all three.
  */
 export function claimsFor(user: object): Record<string, unknown> {
-  const mid = legacyMusicianId(user);
-  return { artists: artistClaims(user), adminOf: adminOfClaims(user), musicians: musicianClaims(user), ...(mid ? { musicianId: mid } : {}) };
-}
-
-/**
- * The one `musicianId` today's rules and browser read (until phases 5-7 move them onto the per-artist `musicians` map): the old
- * `users.musicianId`, else the musician of the person's only membership that has one. Phase 4 stopped writing users.musicianId.
- */
-export function legacyMusicianId(user: object): string | undefined {
-  const u = user as { musicianId?: unknown };
-  if (typeof u.musicianId === "string" && u.musicianId) return u.musicianId;
-  const ms = Object.values(musicianClaims(user));
-  return ms.length === 1 ? ms[0] : undefined;
+  return { artists: artistClaims(user), adminOf: adminOfClaims(user), musicians: musicianClaims(user) };
 }
 
 /** Firebase refuses custom claims over 1000 bytes; Roadie stops at 900 (about eight artists), before writing anything. */
@@ -113,7 +102,7 @@ export async function startSession(authHeader: string | null) {
     if (user && memberships.length && !invites.length) throw new AppError("ai_only", "This login is for AI tools only; it can't sign in to the app", 403);
     // A verified Google account with no band yet: signed in, but nothing to open. Claims say so (Firestore rules then read nothing); they can start a band, or join one they're invited to.
     await adminAuth().setCustomUserClaims(decoded.uid, { artists: {} });
-    return { status: "noBand" as const, uid: decoded.uid, email, name: (user?.name as string | undefined) ?? (typeof decoded.name === "string" && decoded.name.trim() ? decoded.name : email.split("@")[0]), invites };
+    return { status: "noBand" as const, ...(await layout()), uid: decoded.uid, email, name: (user?.name as string | undefined) ?? (typeof decoded.name === "string" && decoded.name.trim() ? decoded.name : email.split("@")[0]), invites };
   }
   const claims = claimsFor(await withoutSuspended(user));
   await adminAuth().setCustomUserClaims(decoded.uid, claims);
@@ -121,9 +110,9 @@ export async function startSession(authHeader: string | null) {
   const [access, asked] = await Promise.all([accessFor(user.id), firestore().collection(SHARED_EDIT_REQUESTS).doc(user.id).get()]);
   return {
     status: "ready" as const,
+    // Where artist data lives (phase 10) and whether Roadie is read-only: the browser builds its paths from the first.
+    ...(await layout()),
     uid: decoded.uid, userId: user.id, name: user.name as string, email,
-    // The old single link (the browser reads its musician per artist from `musicians` since phase 5); removed in phase 7.
-    ...(legacyMusicianId(user) ? { musicianId: legacyMusicianId(user) } : {}),
     musicians: musicianClaims(user), invites,
     mcpAccess: ((user.artists ?? []) as Membership[]).some((x) => mcpIn(user, x.artistId)), artists: await artistsFor(user),
     sharedEditor: access.sharedEditor, platformAdmin: access.platformAdmin, sharedEditRequested: asked.exists,

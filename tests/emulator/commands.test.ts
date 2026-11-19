@@ -68,13 +68,13 @@ test("users.add creates invite + claims + musician link; session picks it up; re
   assert.deepEqual((await db.get(SYS, "users", uid))!.artists, [{ artistId: TEST_ARTIST, role: "member", musicianId: mid }]);
   assert.deepEqual((await db.get(SYS, "users", uid))!.artistIds, [TEST_ARTIST]);
   assert.equal((await db.get(SYS, "musicians", mid))!.artistId, TEST_ARTIST);
-  assert.deepEqual((await adminAuth().getUser(uid)).customClaims, { artists: { [TEST_ARTIST]: "member" }, adminOf: [], musicians: { [TEST_ARTIST]: mid }, musicianId: mid });
+  assert.deepEqual((await adminAuth().getUser(uid)).customClaims, { artists: { [TEST_ARTIST]: "member" }, adminOf: [], musicians: { [TEST_ARTIST]: mid } });
   assert.equal((await dispatch("users.add", bearer(admin.token), { email: "hugo@example.com", name: "D", role: "member" })).status, 409);
 
   await makeArtist("Test Band", "test-band");
   const s = await readySession(bearer(await idToken(uid)));
   assert.deepEqual(s.artists, [{ artistId: TEST_ARTIST, slug: "test-band", name: "Test Band", role: "member", timeZone: "America/Denver" }]);
-  assert.equal(s.musicianId, mid);
+  assert.deepEqual(s.musicians, { [TEST_ARTIST]: mid });
 
   const rm = await dispatch("users.remove", bearer(admin.token), { id: uid });
   assert.equal(rm.status, 200);
@@ -98,7 +98,7 @@ test("users.add with musician: one call makes the band member and the login, lin
   const me = (await db.get(SYS, "users", uid))!;
   assert.equal(me.musicianId, undefined);
   assert.equal(me.artists[0].musicianId, musicianId);
-  assert.deepEqual((await adminAuth().getUser(uid)).customClaims, { artists: { [TEST_ARTIST]: "member" }, adminOf: [], musicians: { [TEST_ARTIST]: musicianId }, musicianId });
+  assert.deepEqual((await adminAuth().getUser(uid)).customClaims, { artists: { [TEST_ARTIST]: "member" }, adminOf: [], musicians: { [TEST_ARTIST]: musicianId } });
   // musicianId and musician together is refused
   const both = await dispatch("users.add", bearer(admin.token), { email: "x@example.com", name: "X", role: "member", musicianId: musicianId, musician: { instruments: [] } });
   assert.equal(both.status, 400);
@@ -118,7 +118,10 @@ test("legacy ai role: can't be created or set any more, but an existing ai login
 
 test("session: an email on no band's list is signed in as noBand with empty claims (not an error)", async () => {
   const u = await adminAuth().createUser({ email: "stranger@example.com", emailVerified: true, displayName: "Pat Stranger" });
-  assert.deepEqual(await startSession(bearer(await idToken(u.uid))), { status: "noBand", uid: u.uid, email: "stranger@example.com", name: "Pat Stranger", invites: [] });
+  const { nestedPaths: _n, readOnly, ...s } = await startSession(bearer(await idToken(u.uid))) as Record<string, unknown>;
+  void _n;
+  assert.deepEqual(s, { status: "noBand", uid: u.uid, email: "stranger@example.com", name: "Pat Stranger", invites: [] });
+  assert.equal(readOnly, false, "the session says whether Roadie is read-only (tenancy phase 10), and where artist data lives");
   assert.deepEqual((await adminAuth().getUser(u.uid)).customClaims, { artists: {} });
 });
 

@@ -1,11 +1,21 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parsePath, scopeQuery, scopedDocPath } from "@/lib/client-scope";
+import { nestedPaths, setNestedPaths } from "@/schema/owners";
+
+/** Run `fn` with artist data top level (`flat`) and nested under the artist (tenancy phase 10), with the path it should use. */
+function inEachLayout(fn: (at: (p: string) => string) => void) {
+  const was = nestedPaths();
+  try {
+    setNestedPaths(false); fn((p) => p);
+    setNestedPaths(true); fn((p) => `artists/A/${p}`);
+  } finally { setNestedPaths(was); }
+}
 
 // Tenancy plan D5: what the browser's hooks ask Firestore for.
 
-test("an artist kind is asked for in the open artist only", () => {
-  assert.deepEqual(scopeQuery("shows", {}, "A"), { kind: "shows", path: "shows", where: [["artistId", "==", "A"]] });
+test("an artist kind is asked for in the open artist only (top level, or under the artist once nested)", () => {
+  inEachLayout((at) => assert.deepEqual(scopeQuery("shows", {}, "A"), { kind: "shows", path: at("shows"), where: [["artistId", "==", "A"]] }));
   assert.deepEqual(scopeQuery("expenses", { where: [["userId", "==", "u1"]] }, "A")?.where, [["artistId", "==", "A"], ["userId", "==", "u1"]]);
 });
 
@@ -33,10 +43,16 @@ test("shared, personal and history kinds are left as asked", () => {
 
 test("sub-collections keep their parent, built by pathOf", () => {
   assert.deepEqual(parsePath("tours/t1/entries"), { kind: "entries", parent: { kind: "tours", id: "t1" } });
-  assert.deepEqual(scopeQuery("tours/t1/entries", { where: [["visibility", "==", "band"]] }, "A"),
-    { kind: "entries", path: "tours/t1/entries", where: [["artistId", "==", "A"], ["visibility", "==", "band"]] });
-  assert.throws(() => scopeQuery("shows/s1/entries", {}, "A"), /doesn't live under/);
-  assert.equal(scopedDocPath("pitches/p1/comments", "A"), "pitches/p1/comments");
+  inEachLayout((at) => {
+    assert.deepEqual(scopeQuery("tours/t1/entries", { where: [["visibility", "==", "band"]] }, "A"),
+      { kind: "entries", path: at("tours/t1/entries"), where: [["artistId", "==", "A"], ["visibility", "==", "band"]] });
+    assert.throws(() => scopeQuery("shows/s1/entries", {}, "A"), /doesn't live under/);
+    assert.equal(scopedDocPath("pitches/p1/comments", "A"), at("pitches/p1/comments"));
+    // What never moves: shared kinds, a person's, and the artist kinds kept top level (looked up before an artist is known).
+    assert.equal(scopedDocPath("venues", "A"), "venues");
+    assert.equal(scopedDocPath("mcpTokens", "A"), "mcpTokens");
+    assert.equal(scopedDocPath("assistantThreads/t1/messages", "A"), "assistantThreads/t1/messages");
+  });
 });
 
 test("a collection group is asked for by its kind", () => {

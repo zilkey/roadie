@@ -3,6 +3,7 @@ import { importCtx, systemCtx } from "@/server/ctx";
 import { db } from "@/server/db";
 import { startSession, syncClaims } from "@/server/session";
 import { addPlatformAdmins, approveEditor } from "@/server/platform";
+import { physicalPath } from "@/schema/owners";
 
 const fsHost = process.env.FIRESTORE_EMULATOR_HOST ?? "127.0.0.1:8280";
 const authHost = process.env.FIREBASE_AUTH_EMULATOR_HOST ?? "127.0.0.1:9319";
@@ -16,6 +17,13 @@ export async function resetEmulators() {
 
 /** The artist test users belong to unless they say otherwise (no artists doc is needed for commands to accept it). */
 export const TEST_ARTIST = "test-artist";
+/**
+ * Where a doc or collection written logically ("shows/s1", "pitches/p1/activity") is stored for `artistId` in this run's layout:
+ * under `artists/{artistId}/…` once artist data is nested (tenancy phase 10), else as written. For tests that seed or read raw.
+ */
+export const at = (path: string, artistId: string = TEST_ARTIST) => physicalPath(path, artistId);
+/** The top-level collection (backup file, wipe count) a kind's records are in for this run's layout: the kind, or "artists" once nested. */
+export const fileOf = (kind: string) => at(kind).split("/")[0];
 /** Unscoped reads and writes for test setup and assertions (tests see every artist's records). */
 export const SYS = systemCtx("test");
 

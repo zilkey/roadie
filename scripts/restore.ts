@@ -3,6 +3,7 @@
  *   tsx scripts/restore.ts <backups/2026-10-23> [--artist <id>] [--overwrite] [--yes] [--dry-run]
  * `--artist <id>`: a backup from before tenancy phase 4 has records with no artistId; they are stamped in memory first, with the
  * phase-3 backfill's rules (src/server/backup.ts stampDump), and the named artist takes records a script or import made.
+ * A backup from before tenancy phase 7 has `users.musicianId`; it moves onto the person's membership in memory (musicianDump).
  * Every document is validated with the Zod schemas first; if any fails, nothing is written. Collections the server keeps outside
  * db.ts (SERVER_KEPT in src/server/backup.ts: Roadie threads, prefs, Google and Meta connections, caches) are restored as they are.
  * Refuses to touch a database that already has data unless --overwrite. Against real Firestore (no emulator host) it also needs --yes.
@@ -11,7 +12,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { firestore } from "@/server/admin";
-import { restoreDump, stampDump, validateDump, zoneDump, type Dump } from "@/server/backup";
+import { musicianDump, restoreDump, stampDump, validateDump, zoneDump, type Dump } from "@/server/backup";
 
 export function loadBackup(dir: string): Dump {
   const dump: Dump = {};
@@ -33,6 +34,8 @@ async function main() {
     if (!artist || artist.startsWith("--")) throw new Error("--artist needs an artist id");
     console.log(`Stamped ${stampDump(dump, artist)} rows with their artist (default ${artist}).`);
   }
+  const linked = musicianDump(dump);
+  if (linked) console.log(`Moved ${linked} person(s)' old users.musicianId onto their membership.`);
   const zoned = zoneDump(dump);
   if (zoned) console.log(`Gave ${zoned} artist(s) with no time zone America/Denver.`);
   const errors = validateDump(dump);

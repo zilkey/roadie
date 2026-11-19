@@ -10,7 +10,12 @@ import { registry } from "@/server/commands/registry";
 import { dumpAll, restoreDump, validateDump, validateRow } from "@/server/backup";
 import { backup } from "../../scripts/backup";
 import { loadBackup } from "../../scripts/restore";
-import { resetEmulators, venue, TEST_ARTIST, SYS } from "./helpers";
+import { at, fileOf, resetEmulators, venue, TEST_ARTIST, SYS } from "./helpers";
+import { splitPath } from "@/schema/owners";
+import type { Dump } from "@/server/backup";
+
+/** A dump's rows of one kind, wherever this run's layout stores them (top level, or under artists/{id} once nested: phase 10). */
+const rowsOf = (d: Dump, kind: string) => Object.values(d).flat().filter((r) => splitPath(r.path).logical.split("/")[0] === kind);
 
 beforeEach(resetEmulators);
 
@@ -29,11 +34,11 @@ test("backup then restore round-trips every collection, subcollections, history 
   await db.softDelete(ctx, "contacts", c.id);
 
   const before = await dumpAll(firestore());
-  assert.ok([before.venues, before.statSnapshots].every((rows) => rows.filter((r) => !r.path.includes("/history/")).length === 1));
+  assert.ok([rowsOf(before, "venues"), rowsOf(before, "statSnapshots")].every((rows) => rows.filter((r) => !r.path.includes("/history/")).length === 1));
   const histRows = (d: typeof before) => Object.values(d).flat().filter((r) => r.path.includes("/history/"));
   assert.ok(histRows(before).length >= 6 && !before.history, "history lives in each record's subcollection, so it is in the parent's file");
-  assert.ok(before.venues.some((r) => r.path === `venues/${v.id}/history/000002`) && before.pitches.some((r) => r.path.includes("/activity/") && r.path.includes("/history/")));
-  assert.ok(before.pitches.some((r) => r.path.includes("/activity/")), "subcollection docs are included");
+  assert.ok(before.venues.some((r) => r.path === `venues/${v.id}/history/000002`) && rowsOf(before, "pitches").some((r) => r.path.includes("/activity/") && r.path.includes("/history/")));
+  assert.ok(rowsOf(before, "pitches").some((r) => r.path.includes("/activity/")), "subcollection docs are included");
   assert.deepEqual(validateDump(before), []);
 
   const out = fs.mkdtempSync(path.join(os.tmpdir(), "bk-"));
@@ -41,7 +46,7 @@ test("backup then restore round-trips every collection, subcollections, history 
     const { dir, counts } = await backup(out, "2026-10-23");
     assert.ok(dir.endsWith("2026-10-23"));
     assert.ok(fs.existsSync(path.join(dir, "venues.json")) && !fs.existsSync(path.join(dir, "history.json")));
-    assert.equal(counts.pitches, before.pitches.length);
+    assert.equal(counts[fileOf("pitches")], before[fileOf("pitches")].length);
 
     await resetEmulators();
     assert.deepEqual(await dumpAll(firestore()), {});
@@ -140,9 +145,10 @@ test("restore validator: venueNotes need their artist and venue, and a venue tha
   await db.create(ctx, "venueNotes", { artistId: TEST_ARTIST, venueId: v.id, contactIds: [], promoterIds: [], notes: "n" }, { id: `${TEST_ARTIST}__${v.id}` });
   const dump = await dumpAll(firestore());
   assert.deepEqual(validateDump(dump), []);
-  assert.ok(dump.venueNotes.some((r) => r.path === `venueNotes/${TEST_ARTIST}__${v.id}`), "the new collection is in the dump");
+  const notePath = at(`venueNotes/${TEST_ARTIST}__${v.id}`);
+  assert.ok(rowsOf(dump, "venueNotes").some((r) => r.path === notePath), "the new collection is in the dump");
   const bad = structuredClone(dump);
-  delete bad.venueNotes.find((r) => r.path === `venueNotes/${TEST_ARTIST}__${v.id}`)!.data.artistId;
+  delete rowsOf(bad, "venueNotes").find((r) => r.path === notePath)!.data.artistId;
   assert.ok(validateDump(bad).some((e) => /artistId/.test(e)));
   // the private fields live on venueNotes only: a venue doc that carries them does not restore
   const old = structuredClone(dump);

@@ -8,7 +8,7 @@ import { adminAuth, firestore } from "@/server/admin";
 import { importCtx } from "@/server/ctx";
 import { dumpAll } from "@/server/backup";
 import { localStamp, wipe } from "../../scripts/wipe";
-import { makeUser, resetEmulators, venue, SYS, TEST_ARTIST } from "./helpers";
+import { at, fileOf, makeUser, resetEmulators, venue, SYS, TEST_ARTIST } from "./helpers";
 
 beforeEach(resetEmulators);
 
@@ -18,7 +18,7 @@ async function seedSomething() {
   const v = await db.create(ctx, "venues", venue("Bluebird", "Denver", { capacity: 500 }));
   await db.update(ctx, "venues", v.id, { website: "https://bluebird.example" });
   const p = await db.create(ctx, "pitches", { target: { kind: "venue", id: v.id, name: "Bluebird" }, status: "toPitch", artistId: TEST_ARTIST, personnel: [], showIds: [] });
-  await firestore().doc(`pitches/${p.id}/activity/one`).set({ id: "one", type: "note", text: "called" });
+  await firestore().doc(at(`pitches/${p.id}/activity/one`)).set({ id: "one", type: "note", text: "called" });
   await firestore().doc("unsubmittedDrafts/u__venues").set({ uid: "u", path: "venues", data: {} });
   await makeUser("owner@example.com", "admin");
   await makeUser("member@example.com", "member");
@@ -39,7 +39,7 @@ test("a dry run deletes nothing, writes no backup, and reports the seeded counts
 
     // Counts match what is actually there, sub-collection docs counted under their parent.
     assert.equal(r.collections.venues, before.venues.length);
-    assert.equal(r.collections.pitches, before.pitches.length);
+    assert.equal(r.collections[fileOf("pitches")], before[fileOf("pitches")].length);
     assert.equal(r.collections.users, before.users.length, "2 users plus their history entries");
     assert.equal(r.collections.unsubmittedDrafts, 1, "cleared although it is not in the backup");
     assert.equal(r.documents, Object.values(r.collections).reduce((n, c) => n + c, 0));
@@ -64,7 +64,7 @@ test("after a wipe every collection is empty and no Auth users remain", async ()
     for (const col of await firestore().listCollections()) {
       assert.ok((await col.limit(1).get()).empty, `${col.id} still has documents`);
     }
-    assert.equal((await firestore().doc(`pitches/${pitchId}/activity/one`).get()).exists, false, "sub-collection documents go too");
+    assert.equal((await firestore().doc(at(`pitches/${pitchId}/activity/one`)).get()).exists, false, "sub-collection documents go too");
     assert.equal((await firestore().doc("unsubmittedDrafts/u__venues").get()).exists, false, "drafts go, so no stale create form reopens");
     assert.equal((await adminAuth().listUsers(10)).users.length, 0, "owner@example.com included: the seed puts it back");
   } finally { fs.rmSync(out, { recursive: true, force: true }); }
@@ -82,8 +82,8 @@ test("the backup runs before the first delete, and holds the documents that were
     // while the documents still existed.
     const manifest = JSON.parse(fs.readFileSync(path.join(r.backupDir!, "_manifest.json"), "utf8")) as { counts: Record<string, number> };
     assert.equal(manifest.counts.venues, before.venues.length);
-    assert.equal(manifest.counts.pitches, before.pitches.length);
-    assert.ok(before.venues.length > 0 && before.pitches.length > 0, "there was something to lose");
+    assert.equal(manifest.counts[fileOf("pitches")], before[fileOf("pitches")].length);
+    assert.ok(before.venues.length > 0 && before[fileOf("pitches")].length > 0, "there was something to lose");
     const saved = JSON.parse(fs.readFileSync(path.join(r.backupDir!, "venues.json"), "utf8")) as unknown[];
     assert.deepEqual(saved, before.venues, "the backup holds the pre-wipe venues, history included");
     assert.ok(fs.existsSync(path.join(r.backupDir!, "users.json")));

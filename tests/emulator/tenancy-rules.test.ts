@@ -17,7 +17,7 @@ import { collection, collectionGroup, doc, getDoc, getDocs, query, setDoc, where
 import { firestore } from "@/server/admin";
 import { claimsFor } from "@/server/session";
 import { db } from "@/server/db";
-import { OWNERS } from "@/schema/owners";
+import { OWNERS, physicalPath } from "@/schema/owners";
 import { makeUser, resetEmulators, SYS } from "./helpers";
 import { ARTIST_KINDS, seedArtists, SUB_KINDS, type SeededArtist } from "./fixtures";
 
@@ -48,6 +48,9 @@ before(async () => {
 });
 after(async () => { await env?.cleanup(); });
 
+/** Where `path` (a collection or a doc, written logically: "shows", "payouts/x") is stored for artist `s` in this run's layout. */
+const at = (s: SeededArtist | string, path: string) => physicalPath(path, typeof s === "string" ? s : s.artistId);
+
 /** A client Firestore signed in as `uid`, with the claims the server sets from their users doc. */
 async function as(uid: string): Promise<ClientDb> {
   const user = (await firestore().doc(`users/${uid}`).get()).data();
@@ -60,11 +63,11 @@ function list(c: ClientDb, s: SeededArtist, kind: string, artistId = s.artistId)
   const { path } = s.records[kind as keyof typeof s.records];
   const filters = KEYED_BY_ARTIST.has(kind) ? [] : [where("artistId", "==", artistId)];
   if (kind === "entries") filters.push(where("visibility", "==", "band")); // what a member's tour page sends
-  return getDocs(query(collection(c, path), ...filters, where("deletedAt", "==", null)));
+  return getDocs(query(collection(c, at(s, path)), ...filters, where("deletedAt", "==", null)));
 }
 const get = (c: ClientDb, s: SeededArtist, kind: string) => {
   const { path, id } = s.records[kind as keyof typeof s.records];
-  return getDoc(doc(c, path, id));
+  return getDoc(doc(c, at(s, path), id));
 };
 
 test("every artist kind in OWNERS has a seed fixture and a rule decision here", () => {
@@ -108,21 +111,22 @@ test("member of A and admin of B: B as its admin, A only as a member", async () 
     await (ok ? assertSucceeds(get(c, A, kind)) : assertFails(get(c, A, kind))).catch(() => assert.fail(`A's member ${ok ? "can't" : "can"} get A's ${kind}`));
   }
   // An unfiltered list never passes, even for someone with a role in both.
+  // (Nested, the path is the artist: a member's list then only needs the soft-delete filter; tenancy-rules-nested.test.ts.)
   await assertFails(getDocs(collection(c, "shows")));
-  await assertFails(getDocs(query(collection(c, "pitches"), where("artistId", "==", A.artistId))));
-  await assertSucceeds(getDocs(query(collection(c, "pitches"), where("artistId", "==", B.artistId))));
+  await assertFails(getDocs(query(collection(c, at(A, "pitches")), where("artistId", "==", A.artistId))));
+  await assertSucceeds(getDocs(query(collection(c, at(B, "pitches")), where("artistId", "==", B.artistId))));
 });
 
 test("a get of a missing doc in an artist kind reads as 'doesn't exist'; an anonymous or role-less one still fails", async () => {
   for (const uid of [A.admin.uid, A.member.uid]) {
     const c = await as(uid);
     for (const path of ["shows/none", "showDeals/none", "setlists/none", "setlistTemplates/none", "rehearsals/none", "tours/none", "pitches/none", "payouts/none", "expenses/none"]) {
-      const snap = await assertSucceeds(getDoc(doc(c, path)));
+      const snap = await assertSucceeds(getDoc(doc(c, at(A, path))));
       assert.equal(snap.exists(), false, path);
     }
   }
-  await assertFails(getDoc(doc(env.unauthenticatedContext().firestore(), "shows/none")));
-  await assertFails(getDoc(doc(env.authenticatedContext("no-band", { artists: {}, adminOf: [], musicians: {} }).firestore(), "shows/none")));
+  await assertFails(getDoc(doc(env.unauthenticatedContext().firestore(), at(A, "shows/none"))));
+  await assertFails(getDoc(doc(env.authenticatedContext("no-band", { artists: {}, adminOf: [], musicians: {} }).firestore(), at(A, "shows/none"))));
 });
 
 test("server-only and owner-only kinds: mcpTokens and Roadie threads read only by their owner, as an admin of that artist", async () => {
@@ -166,7 +170,7 @@ test("history: an artist's entries for its admins, a person's for that person, t
   // Unfiltered never.
   await assertFails(getDocs(collectionGroup(await as(A.admin.uid), "history")));
   // Each artist's record entries: A's show entry for A's admin only.
-  const [showEntry] = (await firestore().collection(`shows/${A.refs.shows}/history`).get()).docs;
+  const [showEntry] = (await firestore().collection(at(A, `shows/${A.refs.shows}/history`)).get()).docs;
   await assertSucceeds(getDoc(doc(await as(A.admin.uid), showEntry.ref.path)));
   await assertFails(getDoc(doc(await as(B.admin.uid), showEntry.ref.path)));
 });
@@ -194,26 +198,29 @@ test("a member of two artists with a musician in each reads only their own payou
   const live = { deletedAt: null };
   const pay = (artistId: string, to: Record<string, string>) => ({ ...live, artistId, to: { name: "Two Ways", ...to }, kind: "pay", amount: 100, projectId: "p" });
   const ask = (artistId: string, ids: string[]) => ({ ...live, artistId, date: "2027-05-01", label: "x", askedMusicianIds: ids, responses: {}, linkTokens: {} });
-  await fs.doc("payouts/two-a").set(pay(A.artistId, { musicianId: mA }));
-  await fs.doc("payouts/two-b").set(pay(B.artistId, { musicianId: mB }));
-  await fs.doc("payouts/two-a-in-b").set(pay(B.artistId, { musicianId: mA })); // A's musician id named in B: not theirs there
-  await fs.doc("payouts/two-user-b").set(pay(B.artistId, { userId: two.uid }));
-  await fs.doc("payouts/other-a").set(pay(A.artistId, { musicianId: A.refs.musicianId }));
-  await fs.doc("availability/two-a").set(ask(A.artistId, [mA]));
-  await fs.doc("availability/two-b").set(ask(B.artistId, [mB]));
-  await fs.doc("availability/two-a-in-b").set(ask(B.artistId, [mA]));
-  await fs.doc("availability/other-a").set(ask(A.artistId, [A.refs.musicianId]));
+  // Each doc in its artist ("<artist> <logical path>"), stored where this run's layout puts it.
+  const where_ = new Map<string, string>();
+  const put = async (artistId: string, p: string, data: Record<string, unknown>) => { where_.set(p, at(artistId, p)); await fs.doc(at(artistId, p)).set(data); };
+  await put(A.artistId, "payouts/two-a", pay(A.artistId, { musicianId: mA }));
+  await put(B.artistId, "payouts/two-b", pay(B.artistId, { musicianId: mB }));
+  await put(B.artistId, "payouts/two-a-in-b", pay(B.artistId, { musicianId: mA })); // A's musician id named in B: not theirs there
+  await put(B.artistId, "payouts/two-user-b", pay(B.artistId, { userId: two.uid }));
+  await put(A.artistId, "payouts/other-a", pay(A.artistId, { musicianId: A.refs.musicianId }));
+  await put(A.artistId, "availability/two-a", ask(A.artistId, [mA]));
+  await put(B.artistId, "availability/two-b", ask(B.artistId, [mB]));
+  await put(B.artistId, "availability/two-a-in-b", ask(B.artistId, [mA]));
+  await put(A.artistId, "availability/other-a", ask(A.artistId, [A.refs.musicianId]));
 
   const c = await as(two.uid);
   for (const p of ["payouts/two-a", "payouts/two-b", "payouts/two-user-b", "availability/two-a", "availability/two-b"]) {
-    await assertSucceeds(getDoc(doc(c, p))).catch(() => assert.fail(`can't read own ${p}`));
+    await assertSucceeds(getDoc(doc(c, where_.get(p)!))).catch(() => assert.fail(`can't read own ${p}`));
   }
   for (const p of ["payouts/two-a-in-b", "payouts/other-a", "availability/two-a-in-b", "availability/other-a"]) {
-    await assertFails(getDoc(doc(c, p))).catch(() => assert.fail(`can read ${p}`));
+    await assertFails(getDoc(doc(c, where_.get(p)!))).catch(() => assert.fail(`can read ${p}`));
   }
   // The lists members send.
   const q = (kind: string, artistId: string, ...w: [string, "==" | "array-contains", string][]) =>
-    getDocs(query(collection(c, kind), where("artistId", "==", artistId), ...w.map((x) => where(...x)), where("deletedAt", "==", null)));
+    getDocs(query(collection(c, at(artistId, kind)), where("artistId", "==", artistId), ...w.map((x) => where(...x)), where("deletedAt", "==", null)));
   for (const [artistId, m] of [[A.artistId, mA], [B.artistId, mB]]) {
     assert.ok((await assertSucceeds(q("payouts", artistId, ["to.musicianId", "==", m]))).size >= 1);
     assert.ok((await assertSucceeds(q("availability", artistId, ["askedMusicianIds", "array-contains", m]))).size >= 1);
@@ -223,13 +230,13 @@ test("a member of two artists with a musician in each reads only their own payou
   await assertFails(q("payouts", B.artistId, ["to.musicianId", "==", mA]));
   await assertFails(q("availability", B.artistId, ["askedMusicianIds", "array-contains", mA]));
   await assertFails(q("expenses", A.artistId, ["userId", "==", A.admin.uid]));
-  await assertFails(getDocs(query(collection(c, "payouts"), where("artistId", "==", A.artistId), where("deletedAt", "==", null))));
+  await assertFails(getDocs(query(collection(c, at(A, "payouts")), where("artistId", "==", A.artistId), where("deletedAt", "==", null))));
 });
 
 test("sub-collections follow their own record's artist", async () => {
   // A member of A, with the band's comment, entry and their audience/visibility filters.
   const m = await as(A.member.uid);
-  const showComments = `shows/${A.refs.shows}/comments`;
+  const showComments = at(A, `shows/${A.refs.shows}/comments`);
   await firestore().doc(`${showComments}/band`).set({ deletedAt: null, artistId: A.artistId, audience: "band", body: "Soundcheck at 5" });
   await assertSucceeds(getDocs(query(collection(m, showComments), where("artistId", "==", A.artistId), where("audience", "==", "band"), where("deletedAt", "==", null))));
   await assertFails(getDocs(query(collection(m, showComments), where("artistId", "==", A.artistId), where("deletedAt", "==", null))));
@@ -244,6 +251,7 @@ test("no client writes, for anyone", async () => {
   for (const uid of [A.admin.uid, A.member.uid, both.uid]) {
     const c = await as(uid);
     await assertFails(setDoc(doc(c, "shows", "new"), { artistId: A.artistId }));
+    await assertFails(setDoc(doc(c, at(A, "shows"), "new"), { artistId: A.artistId }));
     await assertFails(setDoc(doc(c, "users", uid), { name: "x" }));
   }
   assert.ok(await db.get(SYS, "artists", A.artistId));

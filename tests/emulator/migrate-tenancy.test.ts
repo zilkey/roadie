@@ -1,7 +1,8 @@
 /**
  * Tenancy phase 3 backfill (scripts/migrate-tenancy.ts) on two seeded artists turned back into their pre-phase-2 shape: no
  * `artistId` on the kinds that had none, History entries without their scope, users without `artistIds` or
- * `Membership.musicianId`, statSnapshots under their old `{source}_{date}` ids.
+ * `Membership.musicianId`, statSnapshots under their old `{source}_{date}` ids. Always on the top-level layout, the only one phase 3
+ * knew (tenancy phase 10 nests artist data later).
  */
 import { test, before } from "node:test";
 import assert from "node:assert/strict";
@@ -14,9 +15,10 @@ import { collections } from "@/schema";
 import { PARENTS } from "@/schema/owners";
 import { claimsFor } from "@/server/session";
 import { snapshotId } from "@/server/commands/stats";
-import { migrateTenancy, formatReport, undoSnapshots } from "../../scripts/migrate-tenancy";
+import { migrateTenancy, formatReport, undoSnapshots, legacySnapshotId } from "../../scripts/migrate-tenancy";
 import { syncAllClaims } from "../../scripts/sync-claims";
 import { makeUser, resetEmulators } from "./helpers";
+import { forgetLayout, layout } from "@/server/layout";
 import { ARTIST_KINDS, seedArtists } from "./fixtures";
 
 type Scope = { artistId: unknown; ownerUid?: unknown; shared?: unknown; entityId: unknown };
@@ -56,7 +58,7 @@ async function toLegacyShape() {
   // Old ids carry no artist, so only one artist can hold a given day under them: a's goes back to its old id, b's stays prefixed.
   for (const s of (await fs.collection("statSnapshots").get()).docs) {
     if (!s.id.startsWith("a_")) continue;
-    const old = fs.collection("statSnapshots").doc(snapshotId(undefined, s.get("source"), s.get("date")));
+    const old = fs.collection("statSnapshots").doc(legacySnapshotId(s.get("source"), s.get("date")));
     const { artistId: _a, ...data } = s.data();
     void _a;
     await old.set(data);
@@ -69,6 +71,10 @@ async function toLegacyShape() {
 }
 
 before(async () => {
+  // The phase-3 backfill ran on (and only knows) the top-level layout, long before phase 10 moved artist data under artists/{id}.
+  process.env.ROADIE_NESTED_PATHS = "0";
+  forgetLayout();
+  await layout();
   await resetEmulators();
   fs = firestore();
   seeded = await seedArtists("a", "b");
@@ -163,7 +169,7 @@ test("sync-claims gives tokens adminOf and musicians", async () => {
   assert.ok(dry.changed.length >= 4);
   await syncAllClaims({ apply: true });
   const u = await adminAuth().getUser(seeded.A.member.uid);
-  assert.deepEqual(u.customClaims, { artists: { a: "member" }, adminOf: [], musicians: { a: seeded.A.refs.memberMusicianId }, musicianId: seeded.A.refs.memberMusicianId });
+  assert.deepEqual(u.customClaims, { artists: { a: "member" }, adminOf: [], musicians: { a: seeded.A.refs.memberMusicianId } });
   assert.deepEqual((await adminAuth().getUser(seeded.both.uid)).customClaims?.adminOf, ["b"]);
   assert.equal((await syncAllClaims({ apply: false })).changed.length, 0);
 });
@@ -214,7 +220,7 @@ test("--undo-snapshots deletes the prefixed copies once a restore brings the old
   // What `npm run restore` of the pre-migration backup does: the old-id doc comes back as it was.
   const { artistId: _a, ...data } = moved.data()!;
   void _a;
-  await fs.collection("statSnapshots").doc(snapshotId(undefined, "spotifyApi", "2027-05-01")).set(data);
+  await fs.collection("statSnapshots").doc(legacySnapshotId("spotifyApi", "2027-05-01")).set(data);
   // A snapshot written fresh after the backup has no old twin and stays; so does b's (same day, its own createdAt).
   await fs.collection("statSnapshots").doc(snapshotId("a", "instagram", "2027-06-01")).set({ artistId: "a", source: "instagram", date: "2027-06-01", createdAt: new Date() });
   const r = await undoSnapshots({ apply: true });

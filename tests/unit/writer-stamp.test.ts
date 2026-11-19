@@ -1,44 +1,22 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DocumentReference, type DocumentData, type Transaction } from "firebase-admin/firestore";
+import type { DocumentData } from "firebase-admin/firestore";
 import { Writer } from "@/server/db";
+import { fakeTx, logical } from "./fake-tx";
 import { importCtx, systemCtx, type AnyCtx, type Ctx } from "@/server/ctx";
-import { tenancyLog, type Unstamped } from "@/server/tenancy";
 
 // Tenancy phases 2 and 4: the Writer stamps every new artist record with its artist (before validation), refuses one that names
 // another artist, and gives every history entry one scope. Runs on a fake transaction: no emulator needed.
 
-function fakeTx(seed: Record<string, DocumentData> = {}) {
-  const store = new Map<string, DocumentData>(Object.entries(seed));
-  const writes = new Map<string, DocumentData>();
-  const tx = {
-    async get(ref: unknown) {
-      if (ref instanceof DocumentReference) {
-        const d = store.get(ref.path);
-        return { exists: !!d, data: () => d };
-      }
-      return { docs: [] }; // queries (dedupe) find nothing
-    },
-    set(ref: DocumentReference, data: DocumentData) { writes.set(ref.path, data); store.set(ref.path, data); },
-    delete(ref: DocumentReference) { writes.delete(ref.path); store.delete(ref.path); },
-  };
-  return { tx: tx as unknown as Transaction, writes };
-}
 const ctxFor = (artistId: string): Ctx => ({ ...importCtx(artistId, "u1", "run-1"), via: "app", role: "admin" });
 async function write(ctx: AnyCtx, seed: Record<string, DocumentData>, fn: (w: Writer<AnyCtx>) => Promise<unknown>) {
-  const { tx, writes } = fakeTx(seed);
+  const { tx, writes: w0 } = fakeTx(seed);
   const w = new Writer<AnyCtx>(tx, ctx);
   await fn(w);
   w.flush();
-  return writes;
+  return logical(w0);
 }
 const history = (writes: Map<string, DocumentData>, docPath: string) => [...writes].find(([p]) => p.startsWith(`${docPath}/history/`))?.[1];
-function captureUnstamped() {
-  const seen: Unstamped[] = [];
-  const orig = tenancyLog.unstamped;
-  tenancyLog.unstamped = (e) => { seen.push(e); };
-  return { seen, restore: () => { tenancyLog.unstamped = orig; } };
-}
 
 test("a new artist record takes the caller's artist; its history entry is scoped to it", async () => {
   let id = "";
@@ -89,20 +67,14 @@ test("stamped before validation: a contact needs its artistId and builds its ded
   assert.equal(b.matchKey, "B:rosa@example.com");
 });
 
-test("no artist anywhere (a system write naming none): refused, and tenancy.unstamped is logged", async () => {
-  const log = captureUnstamped();
-  try {
-    let writes: Map<string, DocumentData> | undefined;
-    await assert.rejects(async () => { writes = await write(systemCtx("test"), {}, (w) => w.create("songs", { title: "Lighthouse", status: "active" })); }, { code: "artist_required" });
-    assert.equal(writes, undefined);
-    assert.equal(log.seen.length, 1);
-    assert.equal(log.seen[0].kind, "songs");
-  } finally { log.restore(); }
+test("no artist anywhere (a system write naming none): stamping throws, nothing is written", async () => {
+  let writes: Map<string, DocumentData> | undefined;
+  await assert.rejects(async () => { writes = await write(systemCtx("test"), {}, (w) => w.create("songs", { title: "Lighthouse", status: "active" })); }, { code: "artist_required" });
+  assert.equal(writes, undefined);
 });
 
 test("shared and person records aren't stamped; their history entries say shared / ownerUid with artistId null", async () => {
-  const log = captureUnstamped();
-  try {
+  {
     let vid = "";
     const writes = await write(ctxFor("A"), {}, async (w) => {
       vid = (await w.create("venues", { name: "Deep End", type: "bar", address: { city: "Denver", state: "CO" }, region: "denver" })).id;
@@ -116,8 +88,7 @@ test("shared and person records aren't stamped; their history entries say shared
     assert.equal(uh.artistId, null);
     assert.equal(uh.ownerUid, "ann");
     assert.equal(uh.shared, undefined);
-    assert.deepEqual(log.seen, []);
-  } finally { log.restore(); }
+  }
 });
 
 test("users: artistIds is computed from the memberships; a membership's musician must be in its artist and free", async () => {
@@ -133,6 +104,11 @@ test("users: artistIds is computed from the memberships; a membership's musician
   await assert.rejects(write(ctxFor("A"), seed, (w) => w.create("users", { email: "c@example.com", name: "C", artists: [{ artistId: "B", role: "member", musicianId: "m2" }] }, { id: "c" })), { code: "conflict" });
 });
 
-test("users.musicianId is read-only from phase 4", async () => {
-  await assert.rejects(write(ctxFor("A"), {}, (w) => w.create("users", { email: "ann@example.com", name: "Ann", artists: [{ artistId: "A", role: "admin" }], musicianId: "m1" }, { id: "ann" })), { code: "invalid_input" });
+test("phase 7: users.musicianId is gone; a stored one (before the drop script) is stripped on the next write", async () => {
+  const seed = { "users/ann": { id: "ann", email: "ann@example.com", name: "Ann", artists: [{ artistId: "A", role: "admin", musicianId: "m1" }], artistIds: ["A"], musicianId: "m1", rev: 1, deletedAt: null } };
+  const writes = await write(ctxFor("A"), seed, (w) => w.update("users", "ann", { name: "Ann B" }));
+  const after = writes.get("users/ann")!;
+  assert.equal(after.name, "Ann B");
+  assert.equal("musicianId" in after, false);
+  assert.deepEqual(after.artists, [{ artistId: "A", role: "admin", musicianId: "m1" }]);
 });

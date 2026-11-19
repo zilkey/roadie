@@ -6,17 +6,16 @@ import { spotifyClient } from "../integrations";
 import { parseSpotifyCsv, statsCurrent, type StatLike } from "@/lib/stats";
 import type { Ctx } from "../ctx";
 
-/** A snapshot's id: `{artistId}_{source}_{date}` (tenancy phase 2). Written before that, and without an artist: `{source}_{date}`. */
-export const snapshotId = (artistId: string | undefined, source: unknown, date: unknown) => (artistId ? `${artistId}_${source}_${date}` : `${source}_${date}`);
+/** A snapshot's id: `{artistId}_{source}_{date}`. */
+export const snapshotId = (artistId: string, source: unknown, date: unknown) => `${artistId}_${source}_${date}`;
 
-/** Writes one snapshot per day and source; snapshots are never edited, so a day already saved (under its old or new id) is skipped. */
+/** Writes one snapshot per day and source; snapshots are never edited, so a day already saved is skipped. */
 async function writeSnapshots(ctx: Ctx, snaps: Record<string, unknown>[]) {
   return run(ctx, async (w) => {
     const written: string[] = [], skipped: string[] = [];
     for (const s of snaps) {
-      const id = snapshotId(ctx.artistId, s.source, s.date), old = snapshotId(undefined, s.source, s.date);
+      const id = snapshotId(ctx.artistId, s.source, s.date);
       if (await w.get("statSnapshots", id)) { skipped.push(id); continue; }
-      if (id !== old && (await w.get("statSnapshots", old))) { skipped.push(old); continue; }
       await w.create("statSnapshots", s, { id });
       written.push(id);
     }

@@ -15,7 +15,7 @@ export const Membership = z.strictObject({
   role: ArtistRole,
   /** AI (MCP) access in THIS artist; only admins can have it. */
   mcpAccess: z.boolean().optional(),
-  /** This person's musician record in THIS artist (tenancy phase 2; the Writer fills it from `musicianId` when a musician is linked). */
+  /** This person's musician record in THIS artist (the one link between a login and a musician since tenancy phase 7). */
   musicianId: id.optional(),
 });
 export type Membership = z.infer<typeof Membership>;
@@ -25,7 +25,6 @@ export const User = entity({
   name: z.string().min(1),
   /** The artists this login belongs to (at most one entry per artist). Set by users.add / users.update / users.remove. */
   artists: z.array(Membership).refine((ms) => new Set(ms.map((m) => m.artistId)).size === ms.length, "One entry per artist"),
-  musicianId: id.optional(),
   /** Computed from `artists` (src/schema/index.ts): the artist ids of every membership, so a server query can ask "who is in this artist". */
   artistIds: z.array(id).optional(),
   prefs: z.strictObject({ assistant: AssistantPrefs.optional() }).optional(),

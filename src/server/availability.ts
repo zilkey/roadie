@@ -1,4 +1,5 @@
 /** Availability link tokens: random, shown once (in the email), stored only as a SHA-256 hash in linkTokens. */
+import { linkedArtist } from "./links";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { run, db, type Doc } from "./db";
 import { AppError } from "./errors";
@@ -23,7 +24,8 @@ function matches(av: Doc, musicianId: string, token: string): boolean {
  * is through the system view because no ctx exists before the token is checked.
  */
 async function verified(availabilityId: string, musicianId: string, token: string): Promise<{ av: Doc; ctx: Ctx }> {
-  const av = await db.get(systemCtx("availability link"), "availability", availabilityId);
+  // Where the ask lives (nested layout): the link index says, so a public link never needs a collection-group lookup.
+  const av = await db.get(systemCtx("availability link"), "availability", availabilityId, { artistId: await linkedArtist("availability", availabilityId) });
   // Same error for "no such ask" and "wrong token" so links cannot be probed.
   if (!av || av.deletedAt || typeof av.artistId !== "string" || !matches(av, musicianId, token)) throw new AppError("invalid_link", "This link is not valid any more. Ask the band for a new one.", 403);
   return { av, ctx: artistCtx({ uid: `link:${musicianId}`, role: "member", artistId: av.artistId, musicianId, via: "app" }) };

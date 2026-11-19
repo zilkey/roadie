@@ -181,7 +181,8 @@ export function normalizeDoc(kind: string, d: Doc): Doc {
   if ((kind === "setlists" || kind === "setlistTemplates") && Array.isArray(out.items)) {
     out.totalSec = (out.items as { lengthSec?: number }[]).reduce((n, i) => n + (i.lengthSec ?? 0), 0);
   }
-  if (kind === "users") out.artistIds = artistIdsOf(out);
+  // The single musician link moved onto each membership (tenancy phase 7): a stored one is stripped on the next write.
+  if (kind === "users") { delete out.musicianId; out.artistIds = artistIdsOf(out); }
   const mk = matchKeyFor(kind, out);
   if (mk !== undefined) out.matchKey = mk;
   return out;

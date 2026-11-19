@@ -10,7 +10,7 @@
 import { Timestamp, type Firestore } from "firebase-admin/firestore";
 import { z } from "zod";
 import { collections, commonShape, computedFields, kindOf } from "@/schema";
-import { PARENTS, ownerOf } from "@/schema/owners";
+import { PARENTS, ownerOf, splitPath } from "@/schema/owners";
 import { artistIdsOf, type Membership } from "@/schema/users";
 import { DEFAULT_TIME_ZONE } from "@/lib/timezone";
 
@@ -107,7 +107,7 @@ export const ARCHIVED_COLLECTIONS = new Set(["ledger"]);
  * them and restore writes them back as they are, not validated. A collection the server starts keeping this way goes here (or in
  * NOT_BACKED_UP): one in neither list fails the restore with "no schema for collection", on purpose.
  */
-export const SERVER_KEPT = new Set(["assistantThreads", "userPrefs", "googleGrants", "metaConnections", "stagePlotTokens", "routeCache", "geocodes", "fuelPrices", "venueEvents", "venueEventSources", "platform", "platformUsers", "platformArtists", "sharedEditRequests", "usage"]);
+export const SERVER_KEPT = new Set(["assistantThreads", "userPrefs", "googleGrants", "metaConnections", "stagePlotTokens", "routeCache", "geocodes", "fuelPrices", "venueEvents", "venueEventSources", "platform", "platformUsers", "platformArtists", "sharedEditRequests", "usage", "artistLinks"]);
 const SERVER_KEPT_UNDER: Record<string, Set<string>> = { users: new Set(["private"]) };
 /** Restored as it is: an archived or server-kept top-level collection (and everything under it), or a server-kept sub-collection. */
 export const isUnvalidated = (parts: string[]) =>
@@ -115,8 +115,9 @@ export const isUnvalidated = (parts: string[]) =>
 
 /** Check a decoded document against the collection's Zod schema. Returns error messages (empty = valid). */
 export function validateRow(row: BackupRow): string[] {
-  const parts = row.path.split("/");
-  if (parts.length % 2 !== 0) return [`${row.path}: not a document path`];
+  if (row.path.split("/").length % 2 !== 0) return [`${row.path}: not a document path`];
+  // A nested artist record (tenancy phase 10, `artists/{a}/shows/{id}`) is checked as the record it is (`shows/{id}`).
+  const parts = splitPath(row.path).logical.split("/");
   const kind = kindOf(parts.slice(0, -1).join("/"));
   if (isUnvalidated(parts)) return [];
   const def = collections[kind];
@@ -201,6 +202,34 @@ export function stampDump(dump: Dump, artistId: string): number {
     }
     if (ownerOf(kind) !== "artist" || str(d.artistId)) continue;
     r.data = { ...d, artistId: resolve(r.path) ?? artistId };
+    changed++;
+  }
+  return changed;
+}
+
+/**
+ * Move an older backup's `users.musicianId` (the single musician link, removed in tenancy phase 7) onto the person's membership in
+ * that musician's artist, in memory, and drop the field, so backups from before phase 7 still restore and validate. The membership
+ * keeps a musician it already names. A musician that can't be placed (gone from the backup, or in an artist the person isn't in) is
+ * only dropped when the person has exactly one membership, which then takes it. Returns how many users rows changed.
+ */
+export function musicianDump(dump: Dump): number {
+  const artistOfMusician = new Map<string, string>();
+  for (const r of Object.values(dump).flat()) {
+    const m = /^(?:artists\/[^/]+\/)?musicians\/([^/]+)$/.exec(r.path);
+    const a = (r.data as Record<string, unknown>).artistId;
+    if (m && typeof a === "string") artistOfMusician.set(m[1], a);
+  }
+  let changed = 0;
+  for (const r of dump.users ?? []) {
+    if (!/^users\/[^/]+$/.test(r.path)) continue;
+    const d = r.data as Record<string, unknown>;
+    if (!("musicianId" in d)) continue;
+    const { musicianId: mid, ...rest } = d;
+    const ms = (Array.isArray(d.artists) ? d.artists : []) as Membership[];
+    const home = typeof mid === "string" && mid ? artistOfMusician.get(mid) ?? (ms.length === 1 ? ms[0].artistId : undefined) : undefined;
+    const artists = ms.map((m) => (home && m.artistId === home && !m.musicianId ? { ...m, musicianId: mid as string } : m));
+    r.data = { ...rest, artists };
     changed++;
   }
   return changed;

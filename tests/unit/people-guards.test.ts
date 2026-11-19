@@ -7,7 +7,7 @@ import type { Row } from "@/lib/firestore-hooks";
 // The People page disables actions with these reasons; the server enforces the same rules (people.test.ts).
 const A = "artist-1";
 const user = (id: string, role: "admin" | "member", musicianId?: string) =>
-  ({ id, email: `${id}@example.com`, name: id, artists: [{ artistId: A, role }], musicianId }) as unknown as Row<User>;
+  ({ id, email: `${id}@example.com`, name: id, artists: [{ artistId: A, role, ...(musicianId ? { musicianId } : {}) }] }) as unknown as Row<User>;
 const musician = (id: string, extra: Partial<Musician> = {}) =>
   ({ id, name: id, instruments: ["bass"], active: true, ...extra }) as unknown as Row<Musician>;
 const find = (all: ReturnType<typeof derivePeople>, name: string) => all.find((p) => p.name === name)!;

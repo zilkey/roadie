@@ -43,20 +43,20 @@ export const joinNames = (names: string[]) => names.filter(Boolean).join(" & ");
 
 /**
  * Who a show's calendar invitations go to (musician ids): members of the configuration who are on the team (a signed-in admin or
- * member of this artist, linked either way: musician.userId or user.musicianId) and have an email to send to.
+ * member of this artist, linked either way: musician.userId or their membership's musicianId) and have an email to send to.
  * The Booked it! form shows this list and shows.create sends to exactly it.
  */
 export function calendarInvitees(
   configMusicianIds: readonly string[],
   musicians: readonly { id: string; email?: string | null; userId?: string | null }[],
-  users: readonly { id: string; musicianId?: string | null; artists?: unknown }[],
+  users: readonly { id: string; artists?: unknown }[],
   artistId: string,
 ): string[] {
   const team = users.filter((u) => { const r = roleIn(u, artistId); return r === "admin" || r === "member"; });
   return configMusicianIds.filter((mid) => {
     const m = musicians.find((x) => x.id === mid);
-    // Linked by the musician's userId, or by the person's membership in this artist (older docs: their musicianId).
-    const mine = (u: (typeof team)[number]) => (u.artists as { artistId?: string; musicianId?: string }[] | undefined)?.find((x) => x.artistId === artistId)?.musicianId ?? u.musicianId;
+    // Linked by the musician's userId, or by the person's membership in this artist.
+    const mine = (u: (typeof team)[number]) => (u.artists as { artistId?: string; musicianId?: string }[] | undefined)?.find((x) => x.artistId === artistId)?.musicianId;
     return !!m?.email && team.some((u) => u.id === m.userId || mine(u) === m.id);
   });
 }

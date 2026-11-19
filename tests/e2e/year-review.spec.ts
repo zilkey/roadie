@@ -1,5 +1,5 @@
 import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
-import { A, ARTIST_SLUG, FIRESTORE } from "./env";
+import { A, ARTIST_SLUG, FIRESTORE, NESTED } from "./env";
 import { TODAY } from "./dates";
 import { bucks, reviewSeason } from "../../src/lib/yearReview";
 
@@ -17,7 +17,9 @@ async function received2026(request: APIRequestContext): Promise<number> {
   const artistId = artists.find((x) => x.fields.slug?.stringValue === ARTIST_SLUG)!.name.split("/").pop()!;
   let total = 0, pageToken = "";
   do {
-    const res = (await (await request.get(`${docs}/income?pageSize=300${pageToken ? `&pageToken=${pageToken}` : ""}`, { headers: owner })).json()) as { documents?: Doc[]; nextPageToken?: string };
+    // Tenancy phase 10: under the artist when nested (scripts/e2e.ts sets ROADIE_NESTED_PATHS for the seed and the app).
+    const income = NESTED ? `artists/${artistId}/income` : "income";
+    const res = (await (await request.get(`${docs}/${income}?pageSize=300${pageToken ? `&pageToken=${pageToken}` : ""}`, { headers: owner })).json()) as { documents?: Doc[]; nextPageToken?: string };
     for (const { fields: f } of res.documents ?? []) {
       const date = f.date?.stringValue ?? "";
       const deleted = f.deletedAt && f.deletedAt.nullValue === undefined;

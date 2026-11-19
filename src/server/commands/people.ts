@@ -12,7 +12,7 @@ import { assertClaimsFit, syncClaims } from "../session";
 import { seedDefaultTemplates } from "../checklistTemplates";
 import { ensureDefaultProject } from "./projects";
 import { DEFAULT_TIME_ZONE } from "@/lib/timezone";
-import { Configuration, MusicianInput, ArtistInput, UserInput, ArtistRole, TeamRole, TeamEmail, InstrumentList, OptionalEmail, PEOPLE_MESSAGES, slug, slugForArtist, roleIn, mcpIn, type Membership } from "@/schema";
+import { Configuration, MusicianInput, ArtistInput, Membership, ArtistRole, TeamRole, TeamEmail, InstrumentList, OptionalEmail, PEOPLE_MESSAGES, slug, slugForArtist, roleIn, mcpIn } from "@/schema";
 
 /** People commands act on the artist the caller is working in. */
 const artistOfCtx = (ctx: Ctx): string => ctx.artistId;
@@ -154,7 +154,7 @@ export const usersAdd = defineCommand({
   },
 });
 
-const userPatch = z.strictObject({ name: personName, role: TeamRole, mcpAccess: z.boolean().optional(), musicianId: UserInput.shape.musicianId });
+const userPatch = z.strictObject({ name: personName, role: TeamRole, mcpAccess: z.boolean().optional(), musicianId: Membership.shape.musicianId });
 
 export const usersUpdate = defineCommand({
   name: "users.update",

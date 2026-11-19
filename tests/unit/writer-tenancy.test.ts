@@ -1,34 +1,22 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DocumentReference, Timestamp, type DocumentData, type Transaction } from "firebase-admin/firestore";
+import { Timestamp, type DocumentData } from "firebase-admin/firestore";
 import { Writer, visibleTo } from "@/server/db";
+import { fakeTx, logical } from "./fake-tx";
 import { importCtx, personCtx, systemCtx, type AnyCtx } from "@/server/ctx";
 
 // Tenancy plan D3, phase 4: the Writer refuses other artists. A's ctx can't read, overwrite, change or move B's records; id-keyed
 // creates never replace B's doc; undo never moves a record. Runs on a fake transaction: no emulator needed.
 
-function fakeTx(seed: Record<string, DocumentData>) {
-  const store = new Map<string, DocumentData>(Object.entries(seed).map(([k, v]) => [k, structuredClone(v)]));
-  const writes = new Map<string, DocumentData>();
-  const tx = {
-    async get(ref: unknown) {
-      if (ref instanceof DocumentReference) { const d = store.get(ref.path); return { exists: !!d, data: () => d }; }
-      return { docs: [] };
-    },
-    set(ref: DocumentReference, data: DocumentData) { writes.set(ref.path, data); store.set(ref.path, data); },
-    delete(ref: DocumentReference) { writes.delete(ref.path); store.delete(ref.path); },
-  };
-  return { tx: tx as unknown as Transaction, writes, store };
-}
 const A = importCtx("A", "ua", "run-a");
 const t0 = Timestamp.fromMillis(1_700_000_000_000);
 const stamp = (id: string, artistId: string | undefined, extra: DocumentData = {}) => ({ id, ...(artistId ? { artistId } : {}), createdAt: t0, updatedAt: t0, createdBy: "ub", updatedBy: "ub", via: "app", runId: "r", rev: 1, deletedAt: null, schemaVersion: 1, ...extra });
 async function write(ctx: AnyCtx, seed: Record<string, DocumentData>, fn: (w: Writer<AnyCtx>) => Promise<unknown>) {
-  const { tx, writes, store } = fakeTx(seed);
+  const { tx, writes: w0, store: s0 } = fakeTx(seed, { clone: true });
   const w = new Writer<AnyCtx>(tx, ctx);
   const out = await fn(w);
   w.flush();
-  return { writes, store, out };
+  return { writes: logical(w0), store: logical(s0), out };
 }
 
 /** B's record of each id-keyed kind: its path and id, and a valid input A might send with that id. */
@@ -50,11 +38,11 @@ const KEYED: { path: string; id: string; input: DocumentData }[] = [
 test("for each id-keyed kind, creating with B's id as A is not_found and leaves B's doc unchanged", async () => {
   for (const k of KEYED) {
     const seed = { [`${k.path}/${k.id}`]: stamp(k.id, "B", { secret: "B's" }), "shows/showB": stamp("showB", "B") };
-    const { tx, store } = fakeTx(seed);
+    const { tx, store: s0 } = fakeTx(seed, { clone: true });
     const w = new Writer(tx, A);
     await assert.rejects(w.create(k.path, k.input, { id: k.id }), { code: "not_found" }, k.path);
     w.flush();
-    assert.equal(store.get(`${k.path}/${k.id}`)?.secret, "B's", k.path);
+    assert.equal(logical(s0).get(`${k.path}/${k.id}`)?.secret, "B's", k.path);
   }
 });
 

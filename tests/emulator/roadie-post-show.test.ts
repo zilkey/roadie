@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { stillMissing, ASK_CROWD, ASK_STARS } from "@/server/assistant/postShow";
 import { createPending, ensureThread, findOpenPending, loadHistory, newMessageId, newThreadId, saveTurn } from "@/server/assistant/threads";
 import { firestore } from "@/server/admin";
-import { resetEmulators, TEST_ARTIST } from "./helpers";
+import { at, resetEmulators, TEST_ARTIST } from "./helpers";
 import { importCtx } from "@/server/ctx";
 const ctx = importCtx(TEST_ARTIST);
 
@@ -12,9 +12,9 @@ beforeEach(resetEmulators);
 test("stillMissing: asks for the crowd and the stars the show lacks, once per conversation, never over another question", async () => {
   // A deal shares its show's id; the show's date decides whether it has happened.
   const deal = async (date: string, d: Record<string, unknown> = {}) => {
-    const show = firestore().collection("shows").doc(); // only the date and the deal's crowd and rating are read
+    const show = firestore().collection(at("shows")).doc(); // only the date and the deal's crowd and rating are read
     await show.set({ artistId: TEST_ARTIST, date, status: "confirmed" });
-    await firestore().collection("showDeals").doc(show.id).set({ artistId: TEST_ARTIST, contactIds: [], deal: "guarantee", ...d });
+    await firestore().collection(at("showDeals")).doc(show.id).set({ artistId: TEST_ARTIST, contactIds: [], deal: "guarantee", ...d });
     return show;
   };
   const bare = await deal("2026-01-10");

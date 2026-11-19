@@ -11,6 +11,8 @@
  *                                                            #   publicMaps newArtistsPerDay newArtistsPerPerson
  *                                                            #   signUpTriesPerPerson signUpTriesPerIp (per hour)
  *   ... platform-config.ts usage <artistId> [yyyy-mm-dd]     # that artist's counters (default: the last 7 days)
+ *   ... platform-config.ts read-only on | read-only off      # platform/config.readOnly: every write refused, banner shown (phase 10)
+ *   ... platform-config.ts nested on | nested off            # platform/config.nestedPaths: artist data under artists/{id}/… (phase 10)
  *
  * Refuses to run without GCLOUD_PROJECT (so it can't silently hit the demo project).
  */
@@ -21,7 +23,7 @@ import { PLATFORM_CONFIG_DOC } from "@/server/signUpFlag";
 import { DEFAULT_LIMITS, LIMITS_DOC, USAGE, readLimits, type Limits } from "@/server/usage";
 import { syncClaims } from "@/server/session";
 
-const USAGE_TEXT = "Usage: platform-config.ts [sign-up open|close | exempt|unexempt|suspend|unsuspend <artistId> | limit <name> <n> | usage <artistId> [date]]";
+const USAGE_TEXT = "Usage: platform-config.ts [sign-up open|close | exempt|unexempt|suspend|unsuspend <artistId> | limit <name> <n> | usage <artistId> [date] | read-only on|off | nested on|off]";
 
 async function artistName(id: string) {
   const a = await firestore().collection("artists").doc(id).get();
@@ -33,6 +35,7 @@ async function show() {
   const fs = firestore();
   const cfg = (await fs.doc(PLATFORM_CONFIG_DOC).get()).data();
   console.log(`${process.env.GCLOUD_PROJECT}: sign-up is ${cfg?.signUpOpen === true ? "OPEN" : "closed (invite-only)"}`);
+  console.log(`artist data: ${cfg?.nestedPaths === true ? "NESTED (artists/{id}/…)" : "top level"}${cfg?.readOnly === true ? ", READ-ONLY" : ""}`);
   const limits = await readLimits();
   console.log(`limits per artist per day: ${Object.entries(limits).map(([k, v]) => `${k}=${v}${v !== DEFAULT_LIMITS[k as keyof Limits] ? "*" : ""}`).join(" ")}`);
   const flagged = await fs.collection(PLATFORM_ARTISTS).get();
@@ -69,6 +72,13 @@ async function main() {
       if (cmd === "exempt" || cmd === "unexempt") await setArtistFlags(a1, { exempt: cmd === "exempt" }, by);
       else { await setArtistFlags(a1, { suspended: cmd === "suspend" }, by); await resync(a1); }
       console.log(`${name} (${a1}): ${cmd} done`);
+      break;
+    }
+    case "read-only": case "nested": {
+      if (a1 !== "on" && a1 !== "off") throw new Error(USAGE_TEXT);
+      const field = cmd === "nested" ? "nestedPaths" : "readOnly";
+      await firestore().doc(PLATFORM_CONFIG_DOC).set({ [field]: a1 === "on", updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      console.log(`${field} = ${a1 === "on"} (servers pick it up within seconds; open tabs are offered a reload)`);
       break;
     }
     case "limit": {

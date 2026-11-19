@@ -27,6 +27,20 @@ export const ARTIST_SLUG = "nora-quill-band";
 /** A band page of the seeded artist: A("/shows/1") -> "/artists/nora-quill-band/shows/1". */
 export const A = (path: string) => `/artists/${ARTIST_SLUG}${path}`;
 
+/** Artist data is nested under artists/{id}/… in e2e (tenancy phase 10; scripts/e2e.ts) unless ROADIE_NESTED_PATHS=0. */
+export const NESTED = process.env.ROADIE_NESTED_PATHS !== "0";
+type Getter = { get(url: string, opts: { headers: Record<string, string> }): Promise<{ json(): Promise<unknown> }> };
+/**
+ * For specs that read or write the emulator over REST: a function from a seeded band record's logical path ("shows/x",
+ * "showDeals/x") to its REST path, under `artists/{id}/` when nested. `slug` defaults to the seeded band.
+ */
+export async function bandRecords(request: Getter, slug = ARTIST_SLUG): Promise<(path: string) => string> {
+  const res = await request.get(`http://${FIRESTORE}/v1/projects/demo-band-tracker/databases/(default)/documents/artists?pageSize=300`, { headers: { authorization: "Bearer owner" } });
+  const docs = ((await res.json()) as { documents: { name: string; fields: { slug?: { stringValue?: string } } }[] }).documents;
+  const id = docs.find((d) => d.fields.slug?.stringValue === slug)!.name.split("/").pop()!;
+  return (path) => (NESTED ? `artists/${id}/${path}` : path);
+}
+
 /**
  * Opens a main section by its nav key ("shows", "money", ...): the top-bar tab when it fits, else its row in More.
  * At the 1280px test viewport the admin bar fits Shows, Booking, Songs and Money. The helper falls back to More for sections that are hidden or overflow.

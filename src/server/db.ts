@@ -4,7 +4,7 @@
  * with the runId) at `{docPath}/history/{rev}` in the same transaction, enforces matchKey dedupe, and runs
  * denormalization hooks. One call to run() is one Firestore transaction (reads first, buffered writes applied at the end).
  */
-import { Timestamp, type DocumentData, type Query, type Transaction } from "firebase-admin/firestore";
+import { Timestamp, type DocumentData, type DocumentReference, type DocumentSnapshot, type Query, type QuerySnapshot, type Transaction } from "firebase-admin/firestore";
 import { firestore } from "./admin";
 import { AppError, invalid } from "./errors";
 import type { AnyCtx, ArtistCtx, Ctx } from "./ctx";
@@ -12,9 +12,10 @@ import type { FieldDiff } from "@/schema/history";
 import { SCHEMA_VERSION, commonKeys, collections, computedFields, kindOf, normalizeDoc } from "@/schema";
 import { denormalizers } from "./denorm";
 import { SHARED_KINDS, accessOf, refusedMessage } from "./platform";
-import { PARENTS, ownerOf } from "@/schema/owners";
+import { PARENTS, inLayout, movesPath, nestedPaths, ownerOf, physicalPath, splitPath } from "@/schema/owners";
+import { layout, readOnlyError } from "./layout";
+import { LINKED_KINDS, linkPath } from "./links";
 import type { Membership } from "@/schema/users";
-import { tenancyLog } from "./tenancy";
 
 /**
  * Tenancy (plan D3): may `ctx` see this doc? With a SystemCtx (or inside `w.system()`) everything is visible. Otherwise an artist
@@ -38,6 +39,68 @@ function scoped(ctx: AnyCtx, path: string, q: Query, system = false): Query | nu
   return q;
 }
 const notFound = (path: string, id: string) => new AppError("not_found", `${path}/${id} not found`, 404);
+
+/**
+ * Where records live (tenancy phase 10). Code names a collection by its logical path (`shows`, `pitches/{id}/comments`,
+ * `shows/{id}/history`); with nested paths an artist record is stored under `artists/{artistId}/…`. These helpers find that
+ * artist: an ArtistCtx only ever reads its own artist's subtree (the path is its scope), and the system view finds a record by
+ * what it already saw, a hint, its own artist, then a collection-group lookup on the record's `id` field.
+ */
+interface Reader { doc(ref: DocumentReference): Promise<DocumentSnapshot>; query(q: Query): Promise<QuerySnapshot> }
+const plainReader: Reader = { doc: (r) => r.get(), query: (q) => q.get() };
+const txReader = (tx: Transaction): Reader => ({ doc: (r) => tx.get(r), query: (q) => tx.get(q) });
+/** "kind/id" of a top-level record → the artist it is stored under (nested layout). */
+type Located = Map<string, string>;
+
+/** Remember where every row of a nested collection-group or collection read lives. */
+function remember(located: Located, docs: readonly { ref: DocumentReference }[]) {
+  for (const d of docs) {
+    const { logical, artistId } = splitPath(d.ref.path);
+    if (!artistId) continue;
+    const s = logical.split("/");
+    located.set(`${s[0]}/${s[1]}`, artistId);
+  }
+}
+
+async function artistDir(read: Reader, located: Located, ctx: AnyCtx, sys: boolean, kind: string, id: string, hint?: string): Promise<string | null> {
+  const key = `${kind}/${id}`;
+  const known = located.get(key);
+  if (known) return known;
+  if (hint) return hint;
+  if (!sys) return ctx.artistId ?? null;
+  const fs = firestore();
+  if (ctx.artistId && (await read.doc(fs.doc(`artists/${ctx.artistId}/${kind}/${id}`))).exists) { located.set(key, ctx.artistId); return ctx.artistId; }
+  const snap = await read.query(fs.collectionGroup(kind).where("id", "==", id).limit(10));
+  const hit = snap.docs.find((d) => { const sp = splitPath(d.ref.parent.path); return !!sp.artistId && sp.logical === kind; });
+  if (!hit) return null;
+  const a = splitPath(hit.ref.path).artistId!;
+  located.set(key, a);
+  return a;
+}
+
+/** The stored collection path of logical collection `lp` holding doc `id` (any doc of it, for a sub-collection), or null when it can't be found. */
+async function collectionAt(read: Reader, located: Located, ctx: AnyCtx, sys: boolean, lp: string, id: string | null, hint?: string): Promise<string | null> {
+  if (!nestedPaths() || !movesPath(lp)) return lp;
+  const s = lp.split("/");
+  const a = s.length >= 3 ? await artistDir(read, located, ctx, sys, s[0], s[1], hint) : id ? await artistDir(read, located, ctx, sys, lp, id, hint) : (hint ?? (sys ? null : ctx.artistId ?? null));
+  return a ? physicalPath(lp, a) : null;
+}
+
+/**
+ * The query for a logical collection: its stored collection, or, for the system view of a nested top-level kind with no artist known,
+ * a collection-group query (every artist's), whose rows `keep` narrows to that kind's own collections in the current layout.
+ */
+async function queryBase(read: Reader, located: Located, ctx: AnyCtx, sys: boolean, path: string): Promise<{ q: Query; lp: string; keep: (ref: DocumentReference) => boolean } | null> {
+  const { logical: lp, artistId: named } = splitPath(path);
+  const fs = firestore();
+  const all = () => true;
+  if (!nestedPaths() || !movesPath(lp)) return { q: fs.collection(lp), lp, keep: all };
+  if (lp.includes("/") || named || !sys) {
+    const at = await collectionAt(read, located, ctx, sys, lp, null, named);
+    return at ? { q: fs.collection(at), lp, keep: all } : null;
+  }
+  return { q: fs.collectionGroup(lp), lp, keep: (ref) => inLayout(ref.path) && splitPath(ref.parent.path).logical === lp };
+}
 
 export type Doc = DocumentData & { id: string };
 
@@ -215,6 +278,8 @@ interface Unit {
   adopting: Set<string>;
   /** Set when an autosave update folded into an earlier history entry: the rest of this unit uses that entry's runId. */
   coalescedRunId?: string;
+  /** Nested layout: the artist each record this unit has seen is stored under ("kind/id" → artistId). */
+  located: Located;
 }
 
 export class Writer<C extends AnyCtx = Ctx> {
@@ -229,7 +294,7 @@ export class Writer<C extends AnyCtx = Ctx> {
   private deriving = 0;
   constructor(private tx: Transaction, readonly ctx: C, unit?: Unit) {
     this.now = ctx.now ? Timestamp.fromDate(ctx.now) : Timestamp.now();
-    this.unit = unit ?? { pending: [], overlay: new Map(), seq: 0, adopting: new Set() };
+    this.unit = unit ?? { pending: [], overlay: new Map(), seq: 0, adopting: new Set(), located: new Map() };
   }
   get coalescedRunId() { return this.unit.coalescedRunId; }
   get runId() { return this.unit.coalescedRunId ?? this.ctx.runId; }
@@ -240,23 +305,48 @@ export class Writer<C extends AnyCtx = Ctx> {
   private get sys() { return this.ctx.system === true || this.sysDepth > 0; }
 
   private fs = firestore();
+  /** Whether this unit has anything to write. */
+  get hasWrites() { return this.pending.length > 0; }
   flush() { for (const p of this.pending) p(this.tx); }
+  private get read() { return txReader(this.tx); }
+
+  /** The stored reference of a record about to be written: an artist record is stored under its own `artistId` (nested layout). */
+  private refFor(lp: string, id: string, doc: DocumentData): DocumentReference {
+    const s = lp.split("/");
+    const artistId = typeof doc.artistId === "string" && doc.artistId ? doc.artistId : this.unit.located.get(s.length >= 3 ? `${s[0]}/${s[1]}` : `${lp}/${id}`);
+    if (artistId && nestedPaths() && movesPath(lp)) this.unit.located.set(s.length >= 3 ? `${s[0]}/${s[1]}` : `${lp}/${id}`, artistId);
+    return this.fs.collection(physicalPath(lp, artistId)).doc(id);
+  }
 
   /** Read one doc with no artist check (including soft-deleted). Sees this unit's own pending writes. Private: parent and stamping lookups. */
   private async rawGet(path: string, id: string): Promise<Doc | null> {
-    const key = `${path}/${id}`;
+    const { logical: lp, artistId: named } = splitPath(path);
+    const key = `${lp}/${id}`;
     if (this.overlay.has(key)) {
       const v = this.overlay.get(key);
       return v ? ({ ...v, id } as Doc) : null;
     }
-    const snap = await this.tx.get(this.fs.collection(path).doc(id));
+    // Unscoped: a parent or stamping lookup may need another artist's record to refuse it, so it looks wherever the record is.
+    const at = await collectionAt(this.read, this.unit.located, this.ctx, true, lp, id, named);
+    if (!at) return null;
+    const snap = await this.tx.get(this.fs.collection(at).doc(id));
     return snap.exists ? ({ ...snap.data()!, id } as Doc) : null;
   }
 
   /** Read one doc (including soft-deleted), scoped to the ctx's artist: another artist's record reads as null. Sees this unit's own pending writes. */
   async get(path: string, id: string): Promise<Doc | null> {
+    const { logical: lp, artistId: named } = splitPath(path);
+    const key = `${lp}/${id}`;
+    if (!this.overlay.has(key) && !this.sys && nestedPaths() && movesPath(lp)) {
+      // Nested: an artist only ever reads its own subtree; another artist's id simply isn't there.
+      if (!this.ctx.artistId || (named && named !== this.ctx.artistId)) return null;
+      const at = await collectionAt(this.read, this.unit.located, this.ctx, false, lp, id);
+      const snap = at ? await this.tx.get(this.fs.collection(at).doc(id)) : null;
+      const d = snap?.exists ? ({ ...snap.data()!, id } as Doc) : null;
+      return d && visibleTo(this.ctx, lp, id, d) ? d : null;
+    }
     const d = await this.rawGet(path, id);
-    return d && visibleTo(this.ctx, path, id, d, this.sys) ? d : null;
+    return d && visibleTo(this.ctx, lp, id, d, this.sys) ? d : null;
   }
 
   /**
@@ -289,12 +379,17 @@ export class Writer<C extends AnyCtx = Ctx> {
    * asked for.
    */
   async query(path: string, build?: (q: Query) => Query, opts: { includeDeleted?: boolean; pending?: boolean } = {}): Promise<Doc[]> {
-    const base = scoped(this.ctx, path, this.fs.collection(path), this.sys);
+    const at = await queryBase(this.read, this.unit.located, this.ctx, this.sys, path);
+    if (!at) return [];
+    path = at.lp;
+    const base = scoped(this.ctx, path, at.q, this.sys);
     if (!base) return [];
     const q = build ? build(base) : base;
     const snap = await this.tx.get(q);
+    const docs = snap.docs.filter((d) => at.keep(d.ref));
+    remember(this.unit.located, docs);
     const out = new Map<string, Doc>();
-    for (const d of snap.docs) out.set(d.id, { ...d.data(), id: d.id } as Doc);
+    for (const d of docs) out.set(d.id, { ...d.data(), id: d.id } as Doc);
     for (const [key, v] of this.overlay) {
       if (key.startsWith(`${path}/`) && !key.slice(path.length + 1).includes("/") && (opts.pending || out.has(key.slice(path.length + 1)))) {
         const id = key.slice(path.length + 1);
@@ -416,23 +511,16 @@ export class Writer<C extends AnyCtx = Ctx> {
       if (!mine || (named && named !== mine) || (parent && parent !== mine)) throw notFound(path, id);
       artistId = mine;
     }
-    if (!artistId) {
-      tenancyLog.unstamped({ kind, id, via: this.ctx.via, uid: this.ctx.uid });
-      throw new AppError("artist_required", `A new ${kind} record needs its artist`, 400);
-    }
+    if (!artistId) throw new AppError("artist_required", `A new ${kind} record needs its artist`, 400);
     return { ...input, artistId };
   }
 
   /**
    * Memberships carry the person's musician in each artist (`Membership.musicianId`, plan D2). Refuses a link to a musician
-   * outside that membership's artist, or to one already linked to someone else. `users.musicianId` is read-only from tenancy
-   * phase 4 (system writes, such as restore, may still carry it).
+   * outside that membership's artist, or to one already linked to someone else.
    */
   private async checkMemberships(uid: string, before: DocumentData | null, doc: Record<string, unknown>) {
     if (this.sys) return;
-    if ((doc.musicianId ?? null) !== (before?.musicianId ?? null)) {
-      throw new AppError("invalid_input", "users.musicianId is read-only: link the musician on the person's membership", 400);
-    }
     const prev = new Map(((before?.artists ?? []) as Membership[]).map((m) => [m.artistId, m.musicianId]));
     for (const m of (Array.isArray(doc.artists) ? doc.artists : []) as Membership[]) {
       if (!m.musicianId || prev.get(m.artistId) === m.musicianId) continue;
@@ -444,15 +532,17 @@ export class Writer<C extends AnyCtx = Ctx> {
 
   private async commit(path: string, id: string, doc: DocumentData, op: "create" | "update" | "delete" | "merge" | "restore", diff: Diff, autosave = false) {
     const scope = await this.scopeFor(path, id, doc);
-    const ref = this.fs.collection(path).doc(id);
+    const ref = this.refFor(path, id, doc);
     const hist = ref.collection("history").doc(revId(doc.rev as number));
     const seq = this.unit.seq++;
     // Read now, not at flush: by then the hook that made this write has returned.
     const derived = this.deriving > 0;
     this.overlay.set(`${path}/${id}`, doc);
     (this.ctx.touched ??= {})[id] = doc.rev as number;
+    const link = op === "create" && LINKED_KINDS.has(path) && typeof doc.artistId === "string" ? this.fs.doc(linkPath(path, id)) : null;
     this.pending.push((tx) => {
       tx.set(ref, doc);
+      if (link) tx.set(link, { kind: path, id, artistId: doc.artistId });
       tx.set(hist, {
         id: hist.id, schemaVersion: SCHEMA_VERSION, createdAt: this.now, updatedAt: this.now,
         createdBy: this.ctx.uid, updatedBy: this.ctx.uid, via: this.ctx.via, runId: this.runId, deletedAt: null, rev: 1,
@@ -511,7 +601,7 @@ export class Writer<C extends AnyCtx = Ctx> {
   }
 
   private commitFolded(path: string, id: string, doc: DocumentData, into: { last: Doc; merged: Diff }) {
-    const ref = this.fs.collection(path).doc(id);
+    const ref = this.refFor(path, id, doc);
     const old = ref.collection("history").doc(into.last.id);
     const hist = ref.collection("history").doc(revId(doc.rev as number));
     const { id: _oldId, ...body } = into.last;
@@ -527,6 +617,7 @@ export class Writer<C extends AnyCtx = Ctx> {
 
   /** Create. For dedupe collections a matching live doc is merged into instead (merged: true). */
   async create(path: string, input: Record<string, unknown>, opts: { id?: string; keep?: { createdAt: Timestamp; createdBy: string } } = {}): Promise<{ id: string; merged: boolean }> {
+    path = splitPath(path).logical;
     const kind = kindOf(path);
     const d = def(kind);
     const id = opts.id ?? this.fs.collection(path).doc().id;
@@ -568,6 +659,7 @@ export class Writer<C extends AnyCtx = Ctx> {
 
   /** Explicit merge of input into an existing doc (fill gaps, union arrays). */
   async merge(path: string, id: string, input: Record<string, unknown>) {
+    path = splitPath(path).logical;
     const dm = def(kindOf(path));
     if (dm.immutable || dm.appendOnly) throw new AppError("immutable", `${kindOf(path)} documents are never edited`, 409);
     const existing = await this.get(path, id);
@@ -586,6 +678,7 @@ export class Writer<C extends AnyCtx = Ctx> {
 
   /** Patch top-level fields. null removes an optional field. */
   async update(path: string, id: string, patch: Record<string, unknown>) {
+    path = splitPath(path).logical;
     const kind = kindOf(path);
     const d = def(kind);
     if (d.immutable || d.appendOnly) throw new AppError("immutable", `${kind} documents are never edited`, 409);
@@ -622,6 +715,7 @@ export class Writer<C extends AnyCtx = Ctx> {
   }
 
   async softDelete(path: string, id: string) {
+    path = splitPath(path).logical;
     const kind = kindOf(path);
     if (def(kind).immutable || def(kind).appendOnly) throw new AppError("immutable", `${kind} documents are never deleted`, 409);
     const existing = await this.get(path, id);
@@ -634,6 +728,7 @@ export class Writer<C extends AnyCtx = Ctx> {
   }
 
   async restore(path: string, id: string) {
+    path = splitPath(path).logical;
     const existing = await this.get(path, id);
     if (!existing) throw new AppError("not_found", `${path}/${id} not found`, 404);
     if (!existing.deletedAt) return { id, changed: false };
@@ -648,6 +743,7 @@ export class Writer<C extends AnyCtx = Ctx> {
    * update/merge -> put the `before` values back. Works on append-only docs too (activity); never on immutable ones.
    */
   async revert(path: string, id: string, op: string, diff: Diff): Promise<{ changed: boolean; as: "delete" | "restore" | "update"; skipped?: string[] }> {
+    path = splitPath(path).logical;
     const kind = kindOf(path);
     const d = def(kind);
     if (d.immutable) throw new AppError("immutable", `${kind} documents are never edited`, 409);
@@ -710,10 +806,13 @@ export class Writer<C extends AnyCtx = Ctx> {
 
 /** One transaction. Retries re-run fn, so keep it free of side effects other than writer calls. */
 export async function run<T, C extends AnyCtx = Ctx>(ctx: C, fn: (w: Writer<C>) => Promise<T>): Promise<T> {
+  const { readOnly } = await layout();
   let last: Writer<C> | undefined;
   const out = await firestore().runTransaction(async (tx) => {
     const w = (last = new Writer<C>(tx, ctx));
     const out = await fn(w);
+    // Phase 10's copy window: nothing is written (a run that only read still answers).
+    if (readOnly && w.hasWrites && !ctx.system) throw readOnlyError();
     w.flush();
     return out;
   });
@@ -744,26 +843,41 @@ export const db = {
   merge: (ctx: AnyCtx, path: string, id: string, input: Record<string, unknown>) => run(ctx, (w) => w.merge(path, id, input)),
   softDelete: (ctx: AnyCtx, path: string, id: string) => run(ctx, (w) => w.softDelete(path, id)),
   restore: (ctx: AnyCtx, path: string, id: string) => run(ctx, (w) => w.restore(path, id)),
-  /** One doc (including soft-deleted); another artist's record is null. */
-  async get(ctx: AnyCtx, path: string, id: string): Promise<Doc | null> {
-    const s = await firestore().collection(path).doc(id).get();
+  /**
+   * One doc (including soft-deleted); another artist's record is null. `at.artistId` says where a system read should look (nested
+   * layout: a link that names its artist), saving the lookup.
+   */
+  async get(ctx: AnyCtx, path: string, id: string, at: { artistId?: string } = {}): Promise<Doc | null> {
+    await layout();
+    const { logical: lp, artistId: named } = splitPath(path);
+    if (!ctx.system && named && named !== ctx.artistId) return null;
+    const col = await collectionAt(plainReader, new Map(), ctx, !!ctx.system, lp, id, named ?? at.artistId);
+    if (!col) return null;
+    const s = await firestore().collection(col).doc(id).get();
     if (!s.exists) return null;
     const d = { ...s.data()!, id } as Doc;
-    return visibleTo(ctx, path, id, d) ? d : null;
+    return visibleTo(ctx, lp, id, d) ? d : null;
   },
   async list(ctx: AnyCtx, path: string, build?: (q: Query) => Query, opts: { includeDeleted?: boolean } = {}): Promise<Doc[]> {
-    const base = scoped(ctx, path, firestore().collection(path));
+    await layout();
+    const at = await queryBase(plainReader, new Map(), ctx, !!ctx.system, path);
+    if (!at) return [];
+    const base = scoped(ctx, at.lp, at.q);
     if (!base) return [];
     const s = await (build ? build(base) : base).get();
-    return s.docs.map((d) => ({ ...d.data(), id: d.id }) as Doc).filter((d) => (opts.includeDeleted || !d.deletedAt) && visibleTo(ctx, path, d.id, d));
+    return s.docs.filter((d) => at.keep(d.ref)).map((d) => ({ ...d.data(), id: d.id }) as Doc).filter((d) => (opts.includeDeleted || !d.deletedAt) && visibleTo(ctx, at.lp, d.id, d));
   },
-  /** Collection-group query (every collection with this name, at any depth). Rows carry their full `path`. */
+  /**
+   * Collection-group query (every collection with this name, at any depth). Rows carry their full stored `path`. Copies the other layout
+   * still holds (phase 10, before the old copies are deleted) are left out.
+   */
   async listGroup(ctx: AnyCtx, group: string, build?: (q: Query) => Query): Promise<(Doc & { path: string })[]> {
+    await layout();
     const base = scoped(ctx, group, firestore().collectionGroup(group));
     if (!base) return [];
     const s = await (build ? build(base) : base).get();
-    return s.docs.map((d) => ({ ...d.data(), id: d.id, path: d.ref.path }) as Doc & { path: string })
-      .filter((d) => !d.deletedAt && visibleTo(ctx, d.path.split("/").slice(0, -1).join("/"), d.id, d));
+    return s.docs.filter((d) => inLayout(d.ref.path)).map((d) => ({ ...d.data(), id: d.id, path: d.ref.path }) as Doc & { path: string })
+      .filter((d) => !d.deletedAt && visibleTo(ctx, splitPath(d.path.split("/").slice(0, -1).join("/")).logical, d.id, d));
   },
   /** History entries of one record the ctx can see, newest first (a direct read of its subcollection). */
   async history(ctx: AnyCtx, path: string, id: string, limit = 50): Promise<Doc[]> {
