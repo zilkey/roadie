@@ -16,7 +16,7 @@ import { BOOKS_OPENERS_LABEL, CALENDAR_LABEL, booksOpeners, byWhen, calendarHref
 import { ShowFilterBar, useShowFilter } from "@/components/booking/ShowFilters";
 import { CalendarShowsTable } from "@/components/booking/CalendarShowsTable";
 import { useOurGenres } from "@/components/booking/useOurGenres";
-import { ActName, EventActs, EventBadges, EventPoster, OpenerNote, ShowActions, TicketLink, type Ev, type RoomRecord } from "@/components/booking/VenueEventBits";
+import { ActName, EventActs, EventBadges, EventPoster, OpenerNote, ShowActions, TicketLink, type Ev, type LineupAct, type RoomRecord } from "@/components/booking/VenueEventBits";
 import { dateInZone } from "@/lib/timezone";
 import { CALENDAR_TYPES, PRESETS, type CalendarType, type ActDoc, type Venue, type VenueCalendar, type VenueEvent, type VenueEventNote, type VenueEventSource } from "@/schema";
 
@@ -54,6 +54,7 @@ export function VenueEventsTab({ venue, admin, canEditShared = true }: { venue: 
   const acts = useDocs<ActDoc>("acts", actIds);
   const actGenres = useMemo(() => new Map(acts.rows.map((a) => [a.id, a.genres])), [acts.rows]);
   const actLinks = useMemo(() => new Map(acts.rows.map((a) => [a.id, a.links])), [acts.rows]);
+  const actLineups = useMemo(() => new Map(acts.rows.map((a) => [a.id, a as LineupAct])), [acts.rows]);
   const genres = useMemo(() => (ours.length ? { ours, acts: actGenres } : null), [ours, actGenres]);
   const genreChoices = useMemo(() => genreOptions(ours, actGenres.values()), [ours, actGenres]);
   const [f, setF] = useShowFilter("venueEventsShows", {});
@@ -72,7 +73,7 @@ export function VenueEventsTab({ venue, admin, canEditShared = true }: { venue: 
               : upcoming.length === 0 ? <div className="empty" data-testid="venue-events-empty">{cal ? "No upcoming shows on the venue's calendar." : "Shows appear here once the venue's calendar is set up."}</div>
               : shown.length === 0 ? <div className="empty" data-testid="venue-events-none">No upcoming shows here match these filters.</div>
               : <div data-testid="venue-events-list"><CalendarShowsTable shows={shown} venues={new Map([[venue.id, venue]])} takes={takes} pitches={pitches.rows ?? []} records={new Map([[venue.id, health]])}
-                  today={today} genres={genres} actGenres={actGenres} actLinks={actLinks} showVenue={false} admin={admin} /></div>}
+                  today={today} genres={genres} actGenres={actGenres} actLinks={actLinks} actLineups={actLineups} showVenue={false} admin={admin} /></div>}
             {!!upcoming.length && <div className="mt-3"><OpenerNote /></div>}
           </DetailCard>
         )}

@@ -323,3 +323,33 @@ test("Notes: click to edit in place without moving the row; the box grows as she
   await cell.locator("textarea").press("Enter");
   await expect(cell.getByRole("button")).toContainText("Add a note");
 });
+
+test("Notes: each act's Solo / Band pill sits above the note; a click steps Band, Solo, not set, and the act page shows the same", async ({ page }) => {
+  await signInAs(page, "rudy");
+  await page.goto(A("/booking/calendars"));
+  await everyShow(page);
+  const trio = shows(page).filter({ hasText: "Headline Example Trio" });
+  const pill = trio.getByTestId(/^calendar-lineup-/);
+  await expect(pill).toHaveCount(1); // one act on the bill: the pill alone, no name
+  // above the note, in the Notes cell
+  await expect(trio.locator("td.note").getByTestId(/^calendar-show-lineups-/)).toBeVisible();
+  // start unset (a retry may find the earlier attempt's value)
+  for (let i = 0; i < 2 && (await pill.getAttribute("data-lineup")) !== ""; i++) {
+    const was = await pill.getAttribute("data-lineup");
+    await pill.click();
+    await expect(pill).not.toHaveAttribute("data-lineup", was!);
+  }
+  await expect(pill).toHaveText("Solo or band?");
+  await pill.click();
+  await expect(pill).toHaveText("Band");
+  await expect(pill).toHaveAttribute("data-lineup", "band");
+  await pill.click();
+  await expect(pill).toHaveText("Solo");
+
+  // the act page's About card shows the same tag, and saved it: it is still Solo after a reload
+  const actId = (await trio.getByTestId(/^act-name-/).first().getAttribute("data-testid"))!.replace(/^act-name-/, "");
+  await page.goto(A(`/booking/acts/${actId}`));
+  await expect(page.getByTestId("act-lineup")).toHaveText("Solo");
+  await page.getByTestId("act-lineup").click();
+  await expect(page.getByTestId("act-lineup")).toHaveText("Solo or band?");
+});

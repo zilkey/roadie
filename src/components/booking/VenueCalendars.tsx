@@ -20,7 +20,7 @@ import { useCollection } from "@/lib/firestore-hooks";
 import { runCommand } from "@/lib/commands";
 import { ErrorBox } from "@/components/ui";
 import { hrefFor, useBooking } from "@/components/booking/common";
-import { ActLinksLine, EventActs, EventBadges, EventPoster, OPENER_DISCLAIMER, ShowActions, ShowNote, TicketLink } from "@/components/booking/VenueEventBits";
+import { ActLinksLine, EventActs, EventBadges, EventPoster, OPENER_DISCLAIMER, ShowActions, ShowNote, TicketLink, type LineupAct } from "@/components/booking/VenueEventBits";
 import { useOurGenres } from "@/components/booking/useOurGenres";
 import { useSearchParams } from "next/navigation";
 import { CalendarShowsTable } from "@/components/booking/CalendarShowsTable";
@@ -80,6 +80,7 @@ export function VenueCalendars() {
   const acts = useCollection<ActDoc>("acts");
   const actGenres = useMemo(() => new Map((acts.rows ?? []).map((a) => [a.id, a.genres])), [acts.rows]);
   const actLinks = useMemo(() => new Map((acts.rows ?? []).map((a) => [a.id, a.links])), [acts.rows]);
+  const actLineups = useMemo(() => new Map((acts.rows ?? []).map((a) => [a.id, a as LineupAct])), [acts.rows]);
   const genres = useMemo(() => (ours.length ? { ours, acts: actGenres } : null), [ours, actGenres]);
   const genreChoices = useMemo(() => genreOptions(ours, actGenres.values()), [ours, actGenres]);
   const fKey = JSON.stringify(f);
@@ -136,7 +137,7 @@ export function VenueCalendars() {
       {raw && readAll && upcoming.length === 0 && f.when === "any" && <div className="empty" data-testid="venue-calendars-empty"><span>No upcoming shows on any venue&apos;s calendar yet. Set a venue&apos;s calendar up on its Events tab.</span></div>}
       {raw && readAll && !filling && rows.length === 0 && (upcoming.length > 0 || f.when !== "any") && <div className="empty" data-testid="venue-calendars-none"><span>No upcoming shows match these filters.</span></div>}
       {shown.length > 0 && !settling && (
-        <CalendarShowsTable shows={shown} venues={venues} takes={takes} pitches={b.pitches} records={records} today={today} genres={genres} actGenres={actGenres} actLinks={actLinks} since={since} />
+        <CalendarShowsTable shows={shown} venues={venues} takes={takes} pitches={b.pitches} records={records} today={today} genres={genres} actGenres={actGenres} actLinks={actLinks} actLineups={actLineups} since={since} />
       )}
       {(!raw || filling) && !events.error && <span className="s" data-testid="venue-calendars-loading">Loading…</span>}
       {shown.length > 0 && !settling && <p className="s" data-testid="table-caption">Every venue&apos;s upcoming shows, furthest out first, read from its own calendar. A venue&apos;s name opens its Events tab, where Refresh reads the calendar again.</p>}

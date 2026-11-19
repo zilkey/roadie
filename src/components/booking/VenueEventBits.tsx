@@ -14,7 +14,9 @@ import { FlagIcon } from "@/components/booking/common";
 import { LinkIcons } from "@/components/booking/LinkIcons";
 import { campaignArg, useFlagCampaign } from "@/components/booking/FlagCampaign";
 import { ONGOING } from "@/lib/campaigns";
-import { venueEventNoteId, type Act, type VenueEvent, type VenueEventNote, type VenueEventSource } from "@/schema";
+import { LINEUP_LABEL, nextLineup, venueEventNoteId, type Act, type ActDoc, type VenueEvent, type VenueEventNote, type VenueEventSource } from "@/schema";
+import { useCanEditShared } from "@/lib/sharedEdit";
+import { useProfile } from "@/lib/auth";
 
 export type Ev = VenueEvent & { id: string };
 export type RoomRecord = Pick<VenueEventSource, "supportShare" | "billsSeen"> | null | undefined;
@@ -163,5 +165,46 @@ export function ShowActions({ e, take, pitches, venueName }: { e: Ev; take?: Ven
         </div>
       </Dialog>}
     </span>
+  );
+}
+
+/** What a show's lineup line needs to know about each act: its Solo/Band tag and who may change it (the shared-edit rule). */
+export type LineupAct = Pick<ActDoc, "lineup" | "createdBy"> & { adoptedAt?: unknown };
+
+/**
+ * An act's Solo / Band tag as a tiny pill. Clicking it steps unset → Band → Solo → unset (acts.update: the shared record), for
+ * people who may edit the act; for anyone else it only shows a set value. Unset and editable, it reads "Solo or band?".
+ */
+export function LineupPill({ actId, act, testid }: { actId: string; act: LineupAct | undefined; testid?: string }) {
+  const { call, busy, error } = useCommand();
+  const can = useCanEditShared(act);
+  const v = act?.lineup;
+  const id = testid ?? `act-lineup-${actId}`;
+  if (!can) return v ? <span className="chip" data-testid={id} data-lineup={v}>{LINEUP_LABEL[v]}</span> : null;
+  return (
+    <button type="button" className={`chip${v ? "" : " ghost"}`} disabled={busy} data-testid={id} data-lineup={v ?? ""}
+      title={error ?? "Click to change: Band, Solo, or not set"} aria-label={`Solo or band: ${v ? LINEUP_LABEL[v] : "not set"}. Click to change.`}
+      onClick={() => void call("acts.update", { id: actId, patch: { lineup: nextLineup(v) } })}>
+      {v ? LINEUP_LABEL[v] : "Solo or band?"}
+    </button>
+  );
+}
+
+/** Above a show's note: each linked act on the bill with its Solo / Band pill (the act's name too when the bill has more than one). */
+export function ShowLineups({ e, acts }: { e: Ev; acts: ReadonlyMap<string, LineupAct | undefined> }) {
+  const linked = e.acts.filter((a): a is Act & { actId: string } => !!a.actId);
+  const p = useProfile();
+  // Platform admins and approved editors may set any act; anyone else sees only the tags already set (and their own acts' pills).
+  const shown = linked.filter((a) => p.sharedEditor || p.platformAdmin || acts.get(a.actId)?.lineup || acts.get(a.actId)?.createdBy === p.uid);
+  if (!shown.length) return null;
+  return (
+    <div className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs" data-testid={`calendar-show-lineups-${e.id}`}>
+      {shown.map((a) => (
+        <span key={a.actId} className="inline-flex items-center gap-1">
+          {linked.length > 1 && <span className="s">{a.name}</span>}
+          <LineupPill actId={a.actId} act={acts.get(a.actId)} testid={`calendar-lineup-${e.id}-${a.actId}`} />
+        </span>
+      ))}
+    </div>
   );
 }

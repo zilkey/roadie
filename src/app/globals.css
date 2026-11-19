@@ -175,6 +175,9 @@ dialog.dlg::backdrop { background: var(--backdrop); }
 .round-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* People: table, ⋯ menu, side sheet, add form */
+button.chip { border: 0; cursor: pointer; }
+button.chip:hover { color: var(--ink); }
+.chip.ghost, button.chip.ghost { background: transparent; border: 1px dashed var(--line); font-weight: 600; }
 .chip.dk { background: var(--strong); color: var(--on-strong); }
 .icon-btn { flex: none; width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 10px; background: transparent; color: var(--muted); cursor: pointer; }
 .icon-btn:hover { background: var(--soft); color: var(--ink); }

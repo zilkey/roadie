@@ -3,11 +3,11 @@
  * The shows table of Venue calendars, shared with a venue's Venue events tab (#82, Jeff 2026-11-12: "look and behave like the
  * Venue calendars table, minus the venue"). Columns: the flag and X (Pitch this / Not a fit, admins), the poster, Show (date and
  * time, and the venue and its city unless `showVenue` is off), Act (the bill with its badges, the title when it says more, the
- * ticket link, the main act's genres, the acts' link icons) and Notes (admins).
+ * ticket link, the main act's genres, the acts' link icons) and Notes (admins: each act's Solo / Band pill above the show's note).
  */
 import Link from "@/lib/artist";
 import { hrefFor, type PitchRow } from "@/components/booking/common";
-import { ActLinksLine, EventActs, EventBadges, EventPoster, ShowActions, ShowNote, TicketLink, type Ev, type RoomRecord } from "@/components/booking/VenueEventBits";
+import { ActLinksLine, EventActs, EventBadges, EventPoster, ShowActions, ShowLineups, ShowNote, TicketLink, type Ev, type LineupAct, type RoomRecord } from "@/components/booking/VenueEventBits";
 import { eventTime, fmtEventDay, showActLinks, titleSaysMore, type OpenerCtx } from "@/lib/venueEvents";
 import type { ArtistLinkKey, VenueEventNote } from "@/schema";
 
@@ -21,13 +21,15 @@ export interface CalendarShowsProps {
   genres: OpenerCtx["genres"];
   actGenres: ReadonlyMap<string, string[] | undefined>;
   actLinks: ReadonlyMap<string, Partial<Record<ArtistLinkKey, string>> | undefined>;
+  /** Each act's Solo / Band tag and who may change it, for the pills above the note. */
+  actLineups: ReadonlyMap<string, LineupAct | undefined>;
   /** When the person last looked (Venue calendars' New chips). */
   since?: string | null;
   showVenue?: boolean;
   admin?: boolean;
 }
 
-export function CalendarShowsTable({ shows, venues, takes, pitches, records, today, genres, actGenres, actLinks, since, showVenue = true, admin = true }: CalendarShowsProps) {
+export function CalendarShowsTable({ shows, venues, takes, pitches, records, today, genres, actGenres, actLinks, actLineups, since, showVenue = true, admin = true }: CalendarShowsProps) {
   return (
     <div className="book-tw">
       <table className="book-table wn cal">
@@ -57,7 +59,7 @@ export function CalendarShowsTable({ shows, venues, takes, pitches, records, tod
                   {e.ticketUrl && <span className="sub"><TicketLink e={e} /></span>}
                   <ActLinksLine groups={showActLinks(e.acts, actLinks)} eventId={e.id} />
                 </td>
-                {admin && <td className="note"><ShowNote e={e} take={takes.get(e.id)} /></td>}
+                {admin && <td className="note"><ShowLineups e={e} acts={actLineups} /><ShowNote e={e} take={takes.get(e.id)} /></td>}
               </tr>
             );
           })}

@@ -22,6 +22,8 @@ export const ActDoc = entity({
   genres: z.array(z.string().min(1)).optional(),
   description: z.string().optional(),
   hometown: z.string().optional(),
+  /** Solo (one person) or band (two or more). Unset: not known yet. */
+  lineup: z.enum(["solo", "band"]).optional(),
   imageUrl: z.string().optional(),
   lookedUpAt: z.string().optional(),
   /** Look up (#78) found several Spotify artists with exactly this name: the About card asks "same band?" until one is picked. */
@@ -31,6 +33,12 @@ export const ActDoc = entity({
 /** What db.ts validates for `acts`: the shared record. */
 export const ActRecord = ActDoc.omit({ ...serverMask, matchKey: true });
 export type ActDoc = z.infer<typeof ActDoc>;
+
+export const ACT_LINEUPS = ["solo", "band"] as const;
+export type ActLineup = (typeof ACT_LINEUPS)[number];
+export const LINEUP_LABEL: Record<ActLineup, string> = { solo: "Solo", band: "Band" };
+/** The pill's next value on a click: unset → Band → Solo → unset. */
+export const nextLineup = (v: ActLineup | null | undefined): ActLineup | null => (!v ? "band" : v === "band" ? "solo" : null);
 
 export const ACT_RELATIONSHIPS = ["openFor", "peer", "notFit"] as const;
 export type ActRelationship = (typeof ACT_RELATIONSHIPS)[number];

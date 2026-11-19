@@ -17,6 +17,7 @@ import { BackLink, ContactsPanel, hrefFor, useBooking, useNotFound } from "@/com
 import { CardGroup, DetailCard, DetailPage, KV } from "@/components/booking/DetailCards";
 import { AddContactDialog } from "@/components/booking/AddContactDialog";
 import { InlineValue, PlusButton } from "@/components/InlineValue";
+import { LineupPill } from "@/components/booking/VenueEventBits";
 import { ActThumb, StarIcon } from "@/components/booking/ActsTab";
 import { FindTeamButton, TeamFindings } from "@/components/booking/ActTeam";
 import { EventPoster } from "@/components/booking/VenueEventBits";
@@ -232,6 +233,7 @@ function About({ id, act, error, update, onLookup, rooms, cities, posters }: {
           <div className="empty grid justify-items-start gap-2.5" data-testid="act-about-empty">
             <span>Nothing about this act yet. Look up searches the web for their links, photo, where they&apos;re from and what they sound like. You can fix anything it gets wrong.</span>
             {act.lookedUpAt && <span data-testid="act-lookup-nothing">Look up found nothing for {act.name}. Try Search Google, and add what you know by hand.</span>}
+            {(can || act.lineup) && <span className="flex items-center gap-2">Solo or band <LineupPill actId={act.id} act={act} testid="act-lineup" /></span>}
             {lookBtn(`Look up ${act.name}`, "acc")}
           </div>
         )}
@@ -256,6 +258,7 @@ function About({ id, act, error, update, onLookup, rooms, cities, posters }: {
               : can && <PlusButton label="Add a genre" testid="act-genre-add" onClick={() => setAddingGenre(true)} />}
           </span>
         )],
+        ["Solo or band", <LineupPill key="lu" actId={act.id} act={act} testid="act-lineup" />],
         ["From", <InlineValue key="h" testid="act-hometown" label="From" kind="text" value={act.hometown ?? ""} canEdit={can} error={error} onSave={(v) => update({ hometown: v.trim() || null })} />],
         ["Links", (
           <span key="l" className="grid gap-2" data-testid="act-links">
