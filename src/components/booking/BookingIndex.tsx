@@ -18,7 +18,7 @@ import { useVenueTypes } from "@/lib/venueTypes";
 import { CheckFilter } from "@/components/booking/CheckFilter";
 import { FESTIVAL_SORTS, type FestivalSort } from "@/lib/festivalPage";
 import { useFestivalPage } from "@/components/booking/useFestivalPage";
-import { QUIET_DAYS, STATUSES, STATUS_LABEL, isActive, buildSearchItems, fmtDate, highlight, pitchCellText, quietDays, searchItems, todayStr, type Status } from "@/lib/booking";
+import { goneQuiet, STATUSES, STATUS_LABEL, isActive, buildSearchItems, fmtDate, highlight, pitchCellText, searchItems, todayStr, type Status } from "@/lib/booking";
 import { fmtInstant } from "@/lib/timezone";
 import type { Show } from "@/schema";
 import { AddToTourDialog } from "@/components/booking/AddToTourDialog";
@@ -414,11 +414,8 @@ export function BookingTable({ seg, rows, onFlag, sort = "name", onSort, q = "",
     : ["Name", "Initial email", "Follow-up", "Status", "Next step"]; // a campaign page (#82 S7)
   const zone = useZone();
   const today = todayStr(zone);
-  // Pitch List: Pitched or Talking with no contact (or, never contacted, since it was added) for QUIET_DAYS turns the row yellow.
-  const quiet = (r: ListRow) => {
-    const p = r.pitch;
-    return seg === "pitches" && !!p && (quietDays(p.status, (p.lastContactAt ?? p.createdAt)?.toMillis(), today, zone) ?? 0) >= QUIET_DAYS;
-  };
+  // Pitch List: a pitch that has gone quiet (goneQuiet: no contact for QUIET_DAYS, no next step due ahead) turns the row yellow.
+  const quiet = (r: ListRow) => seg === "pitches" && !!r.pitch && goneQuiet(r.pitch, today, zone);
   const link = (r: Ref, testid?: string) => <Link href={hrefFor(r.kind, r.id)} className="nm" data-testid={testid}>{hl(r.name)}</Link>;
   // A row with an active pitch opens the pitch from its name; the place page is one click under it ("Venue page"). Without a pitch the name is the place page.
   const nameLink = (r: ListRow, ref: Ref, testid: string, label?: string) => r.pitch ? (<>

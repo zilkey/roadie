@@ -143,6 +143,16 @@ export function quietDays(status: string, lastMs: number | undefined, today: str
   return (status === "pitched" || status === "talking") && lastMs !== undefined ? daysSince(lastMs, today, zone) : undefined;
 }
 
+/**
+ * Whether a pitch has gone quiet (yellow row, follow-up nudge): Pitched or Talking with no contact (or, never contacted,
+ * since it was added) for `quietLimit` days, unless its next step is due after `today`: a follow-up scheduled ahead is
+ * the plan, not a lapse.
+ */
+export function goneQuiet(p: FollowUpPitchLike, today: string, zone: string, quietLimit = QUIET_DAYS): boolean {
+  if (p.nextStep?.due && p.nextStep.due > today) return false;
+  return (quietDays(p.status, (p.lastContactAt ?? p.createdAt)?.toMillis?.(), today, zone) ?? 0) >= quietLimit;
+}
+
 /** What the follow-up rule reads off a pitch (a Firestore Timestamp on either side has toMillis). */
 export interface FollowUpPitchLike {
   status: string;
@@ -162,7 +172,7 @@ export interface FollowUp {
 }
 /**
  * Whether an active pitch needs a nudge (pitches.needingFollowUp and the To Dos Booking column): a next step due on or before
- * `today`, or Pitched/Talking with no contact for `quietLimit` days. Null when it needs none (or isn't active).
+ * `today`, or gone quiet (goneQuiet: no contact for `quietLimit` days and no next step due ahead). Null when it needs none (or isn't active).
  */
 export function followUpFor(p: FollowUpPitchLike, today: string, zone: string, quietLimit = QUIET_DAYS): FollowUp | null {
   if (!isActive(p.status)) return null;
@@ -171,7 +181,7 @@ export function followUpFor(p: FollowUpPitchLike, today: string, zone: string, q
   if (due) reasons.push(`Next step "${p.nextStep!.text}" was due ${p.nextStep!.due}`);
   const last = (p.lastContactAt ?? p.createdAt)?.toMillis?.();
   const days = last ? daysSince(last, today, zone) : undefined;
-  const quiet = (quietDays(p.status, last, today, zone) ?? 0) >= quietLimit;
+  const quiet = goneQuiet(p, today, zone, quietLimit);
   if (quiet) reasons.push(`No contact for ${days} days`);
   return reasons.length ? { reasons, due, quiet, daysSinceContact: days } : null;
 }
