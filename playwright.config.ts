@@ -13,6 +13,8 @@ const SHARD = process.env.E2E_SHARD ? `-${process.env.E2E_SHARD}` : "";
 export default defineConfig({
   testDir: "tests/e2e",
   outputDir: `test-results${SHARD}`,
+  // Compiles the upload routes before any spec runs (see the file).
+  globalSetup: "./tests/e2e/warm-routes.ts",
   timeout: 60_000,
   expect: { timeout: 15_000 },
   workers: 1,

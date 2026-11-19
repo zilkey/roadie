@@ -504,8 +504,8 @@ textarea.grow { resize: none; overflow: hidden; field-sizing: content; }
 .sf-row dd > .select { width: 100%; }
 .sf-help { margin: 2px 0 4px; font-weight: 400; line-height: 1.35; }
 .sf-note { font-size: 0.9375rem; font-weight: 400; white-space: pre-wrap; }
-/* A Google Doc's text (lyrics, a chord sheet) as the doc has it: monospace, its own line breaks and spaces, so chords stay over the words. */
-.doc-text { display: grid; gap: 1.5em; margin: 0; font-family: var(--f-mono); font-size: 0.875rem; line-height: 1.5; }
+/* A Google Doc's text (lyrics, a chord sheet) as the doc has it: DM Mono (the song docs' font), its own line breaks and spaces, so chords stay over the words. */
+.doc-text { display: grid; gap: 1.5em; margin: 0; font-family: "DM Mono", var(--f-mono); font-size: 0.875rem; line-height: 1.5; }
 .doc-text pre { margin: 0; font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }
 .doc-text strong { font-weight: 700; color: var(--ink); }
 /* A doc table (labels | lyrics): side by side, the first column right-aligned like the doc; on a phone each row stacks, left-aligned. */
