@@ -29,6 +29,16 @@ test("compose: contacts as chips, a template, an unknown address becomes a conta
   // Rosa is the venue's contact: pressed, and in To
   await expect(page.getByTestId("contact-pick-Rosa Jackson")).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("to-chip-rosa@pinehollow.example")).toContainText("Rosa Jackson");
+  // the chips show the address too, not just the name
+  await expect(page.getByTestId("to-chip-rosa@pinehollow.example")).toContainText("<rosa@pinehollow.example>");
+  await expect(page.getByTestId("contact-pick-email-Rosa Jackson")).toHaveText("rosa@pinehollow.example");
+  // typing an address that's already there keeps it in the box with a note, until it's edited
+  await page.getByTestId("to-input").fill("Rosa@PineHollow.example");
+  await page.getByTestId("to-input").blur();
+  await expect(page.getByTestId("to-error")).toHaveText("rosa@pinehollow.example is already added.");
+  await expect(page.getByTestId("to-input")).toHaveValue("Rosa@PineHollow.example");
+  await page.getByTestId("to-input").fill("");
+  await expect(page.getByTestId("to-error")).toHaveCount(0);
 
   // a template fills subject and body; nothing is left to fill in
   await page.getByTestId("template").selectOption({ label: "First pitch" });

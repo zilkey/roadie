@@ -175,6 +175,7 @@ function ReplyCard({ t, messages, nameOf, busy, onSent }: { t: Row<EmailThread>;
   const [typed, setTyped] = useState("");
   const [typedCc, setTypedCc] = useState("");
   const [note, setNote] = useState<string | null>(null);
+  const [dup, setDup] = useState<{ field: "to" | "cc"; msg: string } | null>(null);
   const [editorKey, setEditorKey] = useState(0);
   const sig = useSignature();
   const { call, error, busy: working } = useCommand();
@@ -185,28 +186,35 @@ function ReplyCard({ t, messages, nameOf, busy, onSent }: { t: Row<EmailThread>;
   const body = htmlToText(outgoing).trim();
   const canSend = !busy && !working && recipients.length > 0 && htmlToText(html).trim().length > 0;
 
-  function add(list: string[], set: (v: string[]) => void, raw: string, clear: () => void) {
+  // An address that's already on the reply stays in the box with a note (instead of vanishing); the note clears once it's edited or the other copy is removed.
+  function add(field: "to" | "cc", list: string[], set: (v: string[]) => void, raw: string, setValue: (v: string) => void) {
     const parts = raw.split(/[,\s;]+/).map((s) => s.trim().toLowerCase()).filter(Boolean);
     if (!parts.length) return;
-    const ok = parts.filter((p) => EMAIL_RE.test(p));
+    const valid = parts.filter((p) => EMAIL_RE.test(p));
+    const dups = valid.filter((p) => recipients.includes(p) || cc.includes(p));
+    const ok = valid.filter((p) => !dups.includes(p));
     if (ok.length) set([...new Set([...list, ...ok])]);
-    if (ok.length === parts.length) clear();
+    if (dups.length) { setDup({ field, msg: `${dups.join(", ")} ${dups.length > 1 ? "are" : "is"} already added.` }); setValue(dups.join(", ")); }
+    else if (ok.length === parts.length) setValue("");
   }
-  const input = (list: string[], set: (v: string[]) => void, value: string, setValue: (v: string) => void, testid: string) => (
+  const input = (field: "to" | "cc", list: string[], set: (v: string[]) => void, value: string, setValue: (v: string) => void, testid: string) => (
     <input className="to-input" placeholder="Add someone…" aria-label="Add someone" value={value} data-testid={testid}
-      onChange={(e) => { const v = e.target.value; if (v.endsWith(",")) add(list, set, v, () => setValue("")); else setValue(v); }}
-      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(list, set, value, () => setValue("")); } }}
-      onBlur={() => add(list, set, value, () => setValue(""))} />
+      onChange={(e) => { const v = e.target.value; setDup(null); if (v.endsWith(",")) add(field, list, set, v, setValue); else setValue(v); }}
+      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(field, list, set, value, setValue); } }}
+      onBlur={() => add(field, list, set, value, setValue)} />
   );
   const chip = (a: string, remove: () => void, testid: string) => (
-    <span key={a} className="chip w lg" data-testid={testid}>{nameOf(a)}<button type="button" aria-label={`Remove ${a}`} onClick={remove}>×</button></span>
+    <span key={a} className="chip w lg" data-testid={testid}>
+      {nameOf(a) !== a ? <>{nameOf(a)}<span className="ml-1 font-normal text-[var(--muted)]">&lt;{a}&gt;</span></> : a}
+      <button type="button" aria-label={`Remove ${a}`} onClick={() => { setDup(null); remove(); }}>×</button>
+    </span>
   );
 
   const payload = () => ({
     target: { kind: t.target.kind, id: t.target.id }, threadId: t.threadId, ...(t.pitchId ? { pitchId: t.pitchId } : {}),
     to: recipients, ...(cc.length ? { cc } : {}), subject, body, html: outgoing,
   });
-  function discard() { setHtml(""); setEditorKey((k) => k + 1); setTo(null); setCc([]); setShowCc(false); setNote(null); }
+  function discard() { setHtml(""); setEditorKey((k) => k + 1); setTo(null); setCc([]); setShowCc(false); setNote(null); setDup(null); }
   async function send() {
     setNote(null);
     if (await call("email.send", payload())) { discard(); setNote("Sent"); await onSent(); }
@@ -228,16 +236,18 @@ function ReplyCard({ t, messages, nameOf, busy, onSent }: { t: Row<EmailThread>;
       <div className="to-row" data-testid="reply-to">
         <span className="lbl">To</span>
         {recipients.map((a) => chip(a, () => setTo(recipients.filter((x) => x !== a)), `reply-to-${a}`))}
-        {input(recipients, setTo, typed, setTyped, "reply-to-input")}
+        {input("to", recipients, setTo, typed, setTyped, "reply-to-input")}
         {!showCc && <button type="button" className="btn sm ghost" onClick={() => setShowCc(true)} data-testid="reply-cc-toggle">Cc</button>}
       </div>
+      {dup?.field === "to" && <span className="s" role="alert" data-testid="reply-to-error">{dup.msg}</span>}
       {showCc && (
         <div className="to-row" data-testid="reply-cc">
           <span className="lbl">Cc</span>
           {cc.map((a) => chip(a, () => setCc(cc.filter((x) => x !== a)), `reply-cc-${a}`))}
-          {input(cc, setCc, typedCc, setTypedCc, "reply-cc-input")}
+          {input("cc", cc, setCc, typedCc, setTypedCc, "reply-cc-input")}
         </div>
       )}
+      {dup?.field === "cc" && <span className="s" role="alert" data-testid="reply-cc-error">{dup.msg}</span>}
       <RichTextEditor key={editorKey} value={html} onChange={setHtml} placeholder="Write a reply…" testid="reply-body" />
       <SignatureBlock signature={sig} />
       <ErrorBox error={error} />

@@ -151,27 +151,31 @@ function ComposeForm({ thread }: { thread: Row<EmailThread> | null }) {
 
   // Recipients
   const [typed, setTyped] = useState({ to: "", cc: "" });
-  const [typedError, setTypedError] = useState("");
+  const [typedError, setTypedError] = useState<{ field: "to" | "cc"; msg: string } | null>(null);
   function addTyped(field: "to" | "cc") {
     const raw = typed[field].trim().replace(/,$/, "").trim().toLowerCase();
     if (!raw) return;
-    if (!emailSchema.safeParse(raw).success) { setTypedError(`"${raw}" doesn't look like an email address.`); return; }
-    setTypedError("");
+    if (!emailSchema.safeParse(raw).success) { setTypedError({ field, msg: `"${raw}" doesn't look like an email address.` }); return; }
+    // A duplicate stays in the box with a note, so it doesn't just vanish; the note clears once it's edited or the other copy is removed.
+    if (to.includes(raw) || cc.includes(raw)) { setTypedError({ field, msg: `${raw} is already added${cc.includes(raw) && field === "to" ? " (in Cc)" : to.includes(raw) && field === "cc" ? " (in To)" : ""}.` }); return; }
+    setTypedError(null);
     setTyped((t) => ({ ...t, [field]: "" }));
-    const have = field === "to" ? to : cc;
-    if (!have.includes(raw)) set(field === "to" ? { to: [...to, raw] } : { cc: [...cc, raw] });
+    set(field === "to" ? { to: [...to, raw] } : { cc: [...cc, raw] });
   }
-  const removeAddr = (field: "to" | "cc", addr: string) => set(field === "to" ? { to: to.filter((x) => x !== addr) } : { cc: cc.filter((x) => x !== addr) });
+  const removeAddr = (field: "to" | "cc", addr: string) => {
+    setTypedError(null);
+    set(field === "to" ? { to: to.filter((x) => x !== addr) } : { cc: cc.filter((x) => x !== addr) });
+  };
   const addressInput = (field: "to" | "cc") => (
     <input className="input min-w-[12rem] flex-1 !border-0 !shadow-none" placeholder={field === "to" ? "Type a name or address…" : "Add a Cc…"} aria-label={field === "to" ? "Add a recipient" : "Add a Cc"}
       value={typed[field]} data-testid={`${field}-input`}
-      onChange={(e) => { setTyped({ ...typed, [field]: e.target.value }); setTypedError(""); }}
+      onChange={(e) => { setTyped({ ...typed, [field]: e.target.value }); setTypedError(null); }}
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === ",") { e.preventDefault(); addTyped(field); } }}
       onBlur={() => addTyped(field)} />
   );
   const chips = (field: "to" | "cc") => (field === "to" ? to : cc).map((a) => (
     <span key={a} className="chip w lg" data-testid={`${field}-chip-${a}`}>
-      {labelOf(a)}
+      {contactOf(a) ? <>{labelOf(a)}<span className="ml-1 font-normal text-[var(--muted)]">&lt;{a}&gt;</span></> : a}
       <button type="button" aria-label={`Remove ${labelOf(a)}`} onClick={() => removeAddr(field, a)} data-testid={`${field}-remove-${a}`}>×</button>
     </span>
   ));
@@ -262,6 +266,7 @@ function ComposeForm({ thread }: { thread: Row<EmailThread> | null }) {
               {people.map((c) => (
                 <PickChip key={c.id} on={c.emails.some((e) => to.includes(e))} onToggle={() => togglePerson(c)} testid={`contact-pick-${c.name}`}>
                   {c.name}
+                  <span className="font-normal opacity-75" data-testid={`contact-pick-email-${c.name}`}>{c.emails[0]}</span>
                   {place?.v && rolesOf(place.v, c.id).map((r) => <span key={r} className="chip a" data-testid={`contact-pick-role-${r}`}>{ROLE_LABEL[r]}</span>)}
                 </PickChip>
               ))}
@@ -276,12 +281,13 @@ function ComposeForm({ thread }: { thread: Row<EmailThread> | null }) {
             {addressInput("to")}
             {!f.ccOpen && <button type="button" className="btn sm ghost" onClick={() => set({ ccOpen: true })} data-testid="cc-toggle">Cc</button>}
           </div>
-          {typedError && <span className="s" role="alert" data-testid="to-error">{typedError}</span>}
+          {typedError?.field === "to" && <span className="s" role="alert" data-testid="to-error">{typedError.msg}</span>}
         </div>
         {f.ccOpen && (
           <div className="grid gap-1.5">
             <span className="lbl">Cc</span>
             <div className="input flex flex-wrap items-center gap-1.5" data-testid="cc-row">{chips("cc")}{addressInput("cc")}</div>
+            {typedError?.field === "cc" && <span className="s" role="alert" data-testid="cc-error">{typedError.msg}</span>}
           </div>
         )}
 

@@ -96,6 +96,13 @@ test("a linked thread opens as a page, reads like mail, and replies inline", asy
 
   // Reply goes to the sender; the answer is sent in the same Gmail thread.
   await expect(page.getByTestId("reply-to")).toContainText("Rosa Jackson");
+  await expect(page.getByTestId("reply-to")).toContainText("<rosa@pinehollow.example>"); // the address shows beside the name
+  await page.getByTestId("reply-to-input").fill("rosa@pinehollow.example");
+  await page.getByTestId("reply-to-input").press("Enter");
+  await expect(page.getByTestId("reply-to-error")).toHaveText("rosa@pinehollow.example is already added.");
+  await expect(page.getByTestId("reply-to-input")).toHaveValue("rosa@pinehollow.example");
+  await page.getByTestId("reply-to-input").fill("");
+  await expect(page.getByTestId("reply-to-error")).toHaveCount(0);
   await page.getByTestId("reply-body").click();
   await page.keyboard.type("Dec 11 works");
   await page.getByTestId("reply-send").click();
