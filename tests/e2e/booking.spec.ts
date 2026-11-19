@@ -379,3 +379,35 @@ test("the Booking sub-nav: grouped beside the page, a sideways row on a phone, a
   await page.getByTestId("booking-seg-acts").click();
   await expect(page).toHaveURL(/\/booking\/acts$/);
 });
+
+test("a comment pasted from a venue's booking form keeps its lines and spacing on the timeline", async ({ page }) => {
+  await signInAs(page, "rudy");
+  await page.goto(A("/booking/pitches"));
+  await page.getByTestId("pitch-list").locator("tr", { hasText: "Pine Hollow Lounge" }).locator("[data-testid^='flag-'][data-flagged='1']").click();
+  await expect(page.getByTestId(/^pitch-(page|body)$/)).toBeVisible();
+  const sent = [
+    `Form sent ${Date.now()}`,
+    "Name: Ingrid Avison Band",
+    "Genre:   folk / americana",
+    "",
+    "About us:",
+    "  We play originals.",
+    "Links: https://example.com/a-very-long-link-that-should-wrap-instead-of-running-off-the-card-and-garbling-the-page",
+  ].join("\n");
+  const box = page.getByTestId("comment-input");
+  await box.focus();
+  // A real paste, the way Ingrid does it: plain text from the clipboard into the box.
+  await box.evaluate((el, text) => {
+    const data = new DataTransfer();
+    data.setData("text/plain", text);
+    if (el.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }))) document.execCommand("insertText", false, text);
+  }, sent);
+  await expect(box).toHaveValue(sent);
+  await page.getByTestId("comment-send").click();
+  const row = page.getByTestId("timeline").getByTestId("tl-comment").filter({ hasText: sent.split("\n")[0] });
+  const text = row.getByTestId("tl-text");
+  expect(await text.evaluate((el) => el.textContent)).toBe(sent);
+  expect(await text.evaluate((el) => getComputedStyle(el).whiteSpace)).toBe("pre-wrap");
+  // Nothing runs off the card.
+  expect(await text.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+});

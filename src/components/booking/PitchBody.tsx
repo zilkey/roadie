@@ -197,7 +197,7 @@ export function PitchBody({ id, embedded = false, booking: extBooking, setBookin
               <label><input type="radio" name="pitch-composer" checked={mode === "comment"} onChange={() => setMode("comment")} data-testid="composer-comment" />Comment</label>
               <label><input type="radio" name="pitch-composer" checked={mode === "call"} onChange={() => setMode("call")} data-testid="composer-call" />Call</label>
             </div>
-            <textarea className="input" rows={3} aria-label={mode === "comment" ? "Comment" : "Call notes"}
+            <textarea className="input max-h-[60vh] min-h-[5.5rem] [field-sizing:content]" rows={3} aria-label={mode === "comment" ? "Comment" : "Call notes"}
               placeholder={mode === "comment" ? "Write a comment…" : "Log a call (what was said)…"}
               value={live.value.text} onChange={(e) => live.setValue({ text: e.target.value })}
               data-testid={mode === "comment" ? "comment-input" : "call-input"} />
@@ -222,12 +222,17 @@ function TimelineRow({ t, threadHref }: { t: { at: number; who: string; kind: st
     case "status": body = a.fromStatus && a.toStatus ? <>Moved to <b>{STATUS_LABEL[a.toStatus]}</b>{a.text ? ` · ${a.text}` : ""}</> : <>{a.text ?? "Status set"}</>; break;
     case "emailSent": body = <><b>{t.who} sent</b> {a.gmail?.subject} <span className="s">to {a.gmail?.to}</span></>; break;
     case "emailReply": body = <><b>Reply</b> <span className="s">on {a.gmail?.subject}</span><span className="block whitespace-pre-wrap text-sm">{a.text}</span></>; break;
-    case "call": body = <><b>{t.who}</b> logged a call: {a.text}</>; break;
-    case "email": body = <><b>{t.who}</b> logged an email: {a.text}</>; break;
-    case "visit": body = <><b>{t.who}</b> logged a visit: {a.text}</>; break;
-    case "comment": body = <><b>{t.who}:</b> {a.body}</>; break;
-    default: body = <><b>{t.who}:</b> {a.text}</>;
+    case "call": body = <><b>{t.who}</b> logged a call:<Said text={a.text} /></>; break;
+    case "email": body = <><b>{t.who}</b> logged an email:<Said text={a.text} /></>; break;
+    case "visit": body = <><b>{t.who}</b> logged a visit:<Said text={a.text} /></>; break;
+    case "comment": body = <><b>{t.who}:</b><Said text={a.body} /></>; break;
+    default: body = <><b>{t.who}:</b><Said text={a.text} /></>;
   }
   const read = threadHref && (t.kind === "emailSent" || t.kind === "emailReply");
   return <div className="grid gap-0.5 border-t pt-3 first:border-t-0 first:pt-0" style={{ borderColor: "var(--line)" }} data-testid={`tl-${t.kind}`}><span className="text-sm">{body}</span><span className="s">{date}{read && <> · <Link href={threadHref} className="font-semibold underline" data-testid={`tl-read-${t.kind}`}>read it</Link></>}</span></div>;
+}
+
+/** What someone wrote, exactly as typed or pasted: its own lines, blank lines and spacing kept, long links wrapped (Ingrid pastes the text she sent through a venue's booking form). */
+function Said({ text }: { text?: string }) {
+  return <span className="block whitespace-pre-wrap [overflow-wrap:anywhere]" data-testid="tl-text">{text}</span>;
 }
