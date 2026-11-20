@@ -21,7 +21,7 @@ import { useCollection } from "@/lib/firestore-hooks";
 import { runCommand } from "@/lib/commands";
 import { ErrorBox } from "@/components/ui";
 import { hrefFor, useBooking } from "@/components/booking/common";
-import { ActLinksLine, EventActs, EventBadges, EventPoster, OPENER_DISCLAIMER, ShowActions, ShowNote, TicketLink, type LineupAct } from "@/components/booking/VenueEventBits";
+import { ActLinksLine, EventActs, EventBadges, EventPoster, OpenerNote, ShowActions, ShowNote, TicketLink, type LineupAct } from "@/components/booking/VenueEventBits";
 import { useOurGenres } from "@/components/booking/useOurGenres";
 import { useSearchParams } from "next/navigation";
 import { CalendarShowsTable } from "@/components/booking/CalendarShowsTable";
@@ -29,10 +29,10 @@ import { FlagCampaignSelect } from "@/components/booking/FlagCampaign";
 import { isActive } from "@/lib/booking";
 import { useListMemory } from "@/lib/listMemory";
 import { ShowFilterBar } from "@/components/booking/ShowFilters";
-import { eventTime, fmtEventDay, genreOptions, isUpcoming, latestFirst, nextCalendarLimit, openerChance, showActLinks, showFilterFromParams, showFilterToParams, showListed, titleSaysMore, whenFrom, type ShowFilter } from "@/lib/venueEvents";
+import { eventTime, fmtEventDay, genreOptions, isUpcoming, latestFirst, nextCalendarLimit, showActLinks, showFilterFromParams, showFilterToParams, showListed, titleSaysMore, whenFrom, type ShowFilter } from "@/lib/venueEvents";
 import { REGION_LABEL, type Region } from "@/lib/regions";
 import { dateInZone } from "@/lib/timezone";
-import type { ActDoc, VenueEvent, VenueEventNote, VenueEventSource } from "@/schema";
+import type { ActDoc, VenueEvent, VenueEventNote } from "@/schema";
 
 /** Shows per page. e2e sets a small one (NEXT_PUBLIC_VENUE_CALENDARS_PAGE) so its three fixture shows span two pages. */
 export const CALENDARS_PAGE = Number(process.env.NEXT_PUBLIC_VENUE_CALENDARS_PAGE) || 50;
@@ -68,22 +68,19 @@ export function VenueCalendars() {
   const [f, setF] = useState<CalendarFilter>(() => ({ ...showFilterFromParams(params), region: regionOf(params.get("region") ?? "") }));
   const from = whenFrom(today, f.when);
   const events = useCollection<VenueEvent>("venueEvents", { where: [["date", ">=", from]], order: ["date", "desc"], limit, includeDeleted: true, waitForServer: true });
-  const sources = useCollection<VenueEventSource>("venueEventSources", { includeDeleted: true });
   const notes = useCollection<VenueEventNote>("venueEventNotes", { where: [["artistId", "==", artistId]] });
   const takes = useMemo(() => new Map((notes.rows ?? []).map((n) => [n.eventId, n])), [notes.rows]);
-  const records = useMemo(() => new Map((sources.rows ?? []).map((r) => [r.venueId, r])), [sources.rows]);
   const venues = useMemo(() => new Map(b.venues.map((v) => [v.id, v])), [b.venues]);
   // A bigger limit keeps the rows on screen until the new snapshot lands (useCollection keeps its last rows); a page that came
   // back full may have more behind it.
   const raw = events.rows;
   const upcoming = useMemo(() => (raw ?? []).filter((e) => isUpcoming(e, today)).sort(latestFirst), [raw, today]);
-  // Every act's genres: the genre filter's choices, the main act's genres for it, and genre fit in the opener guess.
+  // Every act's genres: the genre filter's choices and the main act's genres for it.
   const ours = useOurGenres();
   const acts = useCollection<ActDoc>("acts");
   const actGenres = useMemo(() => new Map((acts.rows ?? []).map((a) => [a.id, a.genres])), [acts.rows]);
   const actLinks = useMemo(() => new Map((acts.rows ?? []).map((a) => [a.id, a.links])), [acts.rows]);
   const actLineups = useMemo(() => new Map((acts.rows ?? []).map((a) => [a.id, a as LineupAct])), [acts.rows]);
-  const genres = useMemo(() => (ours.length ? { ours, acts: actGenres } : null), [ours, actGenres]);
   const genreChoices = useMemo(() => genreOptions(ours, actGenres.values()), [ours, actGenres]);
   // The open pitches' ids: a show is flagged when its take points at one (the filled flag).
   const openPitches = useMemo(() => new Set(b.pitches.filter((p) => isActive(p.status)).map((p) => p.id)), [b.pitches]);
@@ -91,9 +88,9 @@ export function VenueCalendars() {
   const rows = useMemo(() => upcoming.filter((e) => {
     if (f.region && venues.get(e.venueId)?.region !== f.region) return false;
     const take = takes.get(e.id);
-    return showListed(e, f, { from, take: take?.take, flagged: !!take?.pitchId && openPitches.has(take.pitchId), acts: actGenres, chance: () => openerChance(e, records.get(e.venueId), today, genres).chance });
+    return showListed(e, f, { from, take: take?.take, flagged: !!take?.pitchId && openPitches.has(take.pitchId), acts: actGenres });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [upcoming, fKey, from, takes, openPitches, records, venues, today, genres, actGenres]);
+  }), [upcoming, fKey, from, takes, openPitches, venues, actGenres]);
   const since = useLastLooked();
   // The limit the server answered `raw` for. A new limit keeps the last rows on screen until its snapshot lands, and its first
   // snapshot may come from the cache with only the last read's shows: that one must not count, or it reads as "that's all" (the
@@ -140,10 +137,10 @@ export function VenueCalendars() {
       {raw && readAll && upcoming.length === 0 && f.when === "any" && <div className="empty" data-testid="venue-calendars-empty"><span>No upcoming shows on any venue&apos;s calendar yet. Set a venue&apos;s calendar up on its Events tab.</span></div>}
       {raw && readAll && !filling && rows.length === 0 && (upcoming.length > 0 || f.when !== "any") && <div className="empty" data-testid="venue-calendars-none"><span>No upcoming shows match these filters.</span></div>}
       {shown.length > 0 && !settling && (
-        <CalendarShowsTable shows={shown} venues={venues} takes={takes} pitches={b.pitches} records={records} today={today} genres={genres} actGenres={actGenres} actLinks={actLinks} actLineups={actLineups} since={since} />
+        <CalendarShowsTable shows={shown} venues={venues} takes={takes} pitches={b.pitches} today={today} actGenres={actGenres} actLinks={actLinks} actLineups={actLineups} since={since} />
       )}
       {(!raw || filling) && !events.error && <span className="s" data-testid="venue-calendars-loading">Loading…</span>}
-      <p className="s" data-testid="opener-disclaimer">Opener chance is {OPENER_DISCLAIMER.charAt(0).toLowerCase() + OPENER_DISCLAIMER.slice(1)} Hover a badge for why.</p>
+      <OpenerNote />
       {shown.length > 0 && !settling && <p className="s" data-testid="table-caption">Every venue&apos;s upcoming shows, furthest out first, read from its own calendar. A venue&apos;s name opens its Events tab, where Refresh reads the calendar again.</p>}
       {hasMore && !filling && (
         <button type="button" className="btn ghost justify-self-center" onClick={() => { setPages((n) => n + 1); if (rows.length <= want + CALENDARS_PAGE) setLimit((n) => n + CALENDARS_PAGE); }} data-testid="venue-calendars-more">

@@ -1,12 +1,12 @@
 "use client";
 /**
  * The pieces of a venue-calendar show (issue #60) that the venue's Events tab and Booking's Venue calendars tab both draw:
- * the badges (the opener-chance guess), the poster, the act line, the ticket link, and the pitch flag and Not a fit (ShowActions).
+ * the badges (the stored opener slot, with its x and + buttons), the poster, the act line, the ticket link, and the pitch flag and Not a fit (ShowActions).
  */
 import { Fragment, useState } from "react";
 import Link, { useArtist } from "@/lib/artist";
 import { Dialog, useCommand } from "@/components/ui";
-import { billParts, fmtEventDay, openerChance, TOUR_WINDOW_DAYS, type OpenerCtx, type ShowActLinks } from "@/lib/venueEvents";
+import { billParts, fmtEventDay, TOUR_WINDOW_DAYS, type ShowActLinks } from "@/lib/venueEvents";
 import { InlineValue } from "@/components/InlineValue";
 import { isActive } from "@/lib/booking";
 import { XIcon } from "@/components/booking/ActsTab";
@@ -21,29 +21,50 @@ import { useProfile } from "@/lib/auth";
 export type Ev = VenueEvent & { id: string };
 export type RoomRecord = Pick<VenueEventSource, "supportShare" | "billsSeen"> | null | undefined;
 
-export const OPENER_DISCLAIMER = "A guess from the listing, not perfect.";
-
-/** Likely opener slot / Maybe (the reasons and the disclaimer as its title), On tour, New, Sold out, Cancelled. */
-export function EventBadges({ e, stats, today, isNew, genres }: { e: Ev; stats?: RoomRecord; today: string; /** New since the viewer last looked (Venue calendars only) */ isNew?: boolean; genres?: OpenerCtx["genres"] }) {
-  const o = openerChance(e, stats, today, genres);
+/** Likely opener slot (the stored openerSlot, with an x; "+ Opener slot" when it's off), On tour, New, Sold out, Cancelled. */
+export function EventBadges({ e, today, isNew }: { e: Ev; today: string; /** New since the viewer last looked (Venue calendars only) */ isNew?: boolean }) {
   return (<>
     {(e.tourStops ?? 0) >= 2 && (
       <span className="chip y" data-testid="venue-event-tour" title={`The headliner plays ${e.tourStops} Colorado rooms within ${TOUR_WINDOW_DAYS / 7} weeks of this show: a run like that usually needs a local opener in each town.`}>On tour</span>
     )}
     {isNew && <span className="chip a" data-testid="venue-event-new" title="New on the venue's calendar since you last looked">New</span>}
-    {o.chance !== "unlikely" && (
-      <span className={`chip${o.chance === "likely" ? " a" : ""}`} data-testid="venue-event-chance" data-chance={o.chance}
-        title={`${o.reasons.join(". ")}. ${OPENER_DISCLAIMER}`}>
-        {o.chance === "likely" ? "Likely opener slot" : "Maybe"}
-      </span>
-    )}
+    {e.date >= today && e.status !== "cancelled" && e.status !== "gone" && <OpenerSlotChip e={e} />}
     {e.status === "soldout" && <span className="chip m">Sold out</span>}
     {e.status === "cancelled" && <span className="chip m">Cancelled</span>}
   </>);
 }
 
-/** Under a list that shows the opener badges: how far to trust them. */
-export const OpenerNote = () => <span className="s" data-testid="opener-disclaimer">&ldquo;Likely opener slot&rdquo; and &ldquo;Maybe&rdquo; are {OPENER_DISCLAIMER.charAt(0).toLowerCase() + OPENER_DISCLAIMER.slice(1)} Hover one for why.</span>;
+/**
+ * The show's opener slot (state: VenueEvent.openerSlot). On: "Likely opener slot" with an x that turns it off. Off: a quiet
+ * "+ Opener slot" that turns it on (admins; the row shows it on hover). Both are venueEvents.setOpenerSlot, shared with every band.
+ */
+export function OpenerSlotChip({ e }: { e: Ev }) {
+  const { role } = useArtist();
+  const { call, busy, error } = useCommand();
+  const s = e.openerSlot;
+  const admin = role === "admin";
+  const set = (open: boolean) => void call("venueEvents.setOpenerSlot", { eventId: e.id, open });
+  const why = s ? (s.by === "person" ? "Set by hand" : `Roadie\u2019s guess at import${s.why ? `: ${s.why}` : ""}`) : "";
+  if (s?.open) return (
+    <span className="chip a inline-flex items-center gap-1" data-testid="venue-event-chance" data-by={s.by} title={why}>
+      Likely opener slot
+      {admin && <button type="button" className="-mr-1 inline-flex rounded-full p-0.5 opacity-60 hover:opacity-100" disabled={busy}
+        aria-label="Not an opener slot" title="Not an opener slot" onClick={() => set(false)} data-testid={`opener-slot-off-${e.id}`}><XIcon size={12} /></button>}
+      {error && <span className="text-[var(--danger)]">{error}</span>}
+    </span>
+  );
+  if (!admin) return null;
+  return (<>
+    <button type="button" className="opener-add text-sm text-[var(--muted)] hover:text-[var(--ink)]" disabled={busy} title={why ? `Off: ${why}. Click if it has one.` : "Mark this show as having an opener slot"}
+      onClick={() => set(true)} data-testid={`opener-slot-on-${e.id}`}>+ Opener slot</button>
+    {error && <span className="text-sm text-[var(--danger)]">{error}</span>}
+  </>);
+}
+
+/** Under a list that shows the opener badges: where they come from and how to fix one. */
+export const OpenerNote = () => (
+  <p className="s" data-testid="opener-disclaimer">&ldquo;Likely opener slot&rdquo; is Roadie&apos;s best guess when a show first lands on the calendar. Hover one for why; x it when it&apos;s wrong, or use + Opener slot on a show it missed.</p>
+);
 
 /** A show's poster, or a plain square when it has none or it won't load. Remote hosts are arbitrary (every venue's own CDN), so a plain img. */
 export function EventPoster({ src, alt, size = 64, testid = "venue-event" }: { src?: string; alt: string; size?: number; testid?: string }) {

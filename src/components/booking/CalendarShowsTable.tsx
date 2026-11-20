@@ -7,8 +7,8 @@
  */
 import Link from "@/lib/artist";
 import { hrefFor, type PitchRow } from "@/components/booking/common";
-import { ActLinksLine, EventActs, EventBadges, EventPoster, ShowActions, ShowLineups, ShowNote, TicketLink, type Ev, type LineupAct, type RoomRecord } from "@/components/booking/VenueEventBits";
-import { eventTime, fmtEventDay, showActLinks, titleSaysMore, type OpenerCtx } from "@/lib/venueEvents";
+import { ActLinksLine, EventActs, EventBadges, EventPoster, ShowActions, ShowLineups, ShowNote, TicketLink, type Ev, type LineupAct } from "@/components/booking/VenueEventBits";
+import { eventTime, fmtEventDay, showActLinks, titleSaysMore } from "@/lib/venueEvents";
 import type { ArtistLinkKey, VenueEventNote } from "@/schema";
 
 export interface CalendarShowsProps {
@@ -16,9 +16,7 @@ export interface CalendarShowsProps {
   venues: ReadonlyMap<string, { id: string; name: string; address: { city?: string } }>;
   takes: ReadonlyMap<string, VenueEventNote>;
   pitches: readonly Pick<PitchRow, "id" | "status" | "campaignId" | "target">[] | readonly { id: string; status: string; campaignId?: string | null; target?: { kind: string; id: string } }[];
-  records: ReadonlyMap<string, RoomRecord>;
   today: string;
-  genres: OpenerCtx["genres"];
   actGenres: ReadonlyMap<string, string[] | undefined>;
   actLinks: ReadonlyMap<string, Partial<Record<ArtistLinkKey, string>> | undefined>;
   /** Each act's Solo / Band tag and who may change it, for the pills above the note. */
@@ -29,7 +27,7 @@ export interface CalendarShowsProps {
   admin?: boolean;
 }
 
-export function CalendarShowsTable({ shows, venues, takes, pitches, records, today, genres, actGenres, actLinks, actLineups, since, showVenue = true, admin = true }: CalendarShowsProps) {
+export function CalendarShowsTable({ shows, venues, takes, pitches, today, actGenres, actLinks, actLineups, since, showVenue = true, admin = true }: CalendarShowsProps) {
   return (
     <div className="book-tw">
       <table className="book-table wn cal">
@@ -46,14 +44,14 @@ export function CalendarShowsTable({ shows, venues, takes, pitches, records, tod
             const main = e.acts.find((a) => a.role === "headliner") ?? e.acts[0];
             const g = (main?.actId && actGenres.get(main.actId)) || [];
             return (
-              <tr key={e.id} data-testid={`calendar-show-${e.id}`}>
+              <tr key={e.id} className="show-row" data-testid={`calendar-show-${e.id}`}>
                 {admin && <td className="flag"><ShowActions e={e} take={takes.get(e.id)} pitches={pitches as never} venueName={v?.name ?? "the venue"} /></td>}
                 <td className="w-14"><EventPoster src={e.imageUrl} alt={e.title} size={48} testid="calendar-show-poster" /></td>
                 <td className="nw" data-testid="calendar-show-date"><b>{fmtEventDay(e.date)}</b>{time && <span className="sub">{time}</span>}
                   {showVenue && (v ? <span className="sub"><Link href={`${hrefFor("venue", v.id)}?tab=events`} className="font-semibold" data-testid={`calendar-show-venue-${e.id}`}>{v.name}</Link></span> : <span className="dash">—</span>)}
                   {showVenue && v?.address.city && <span className="sub whitespace-nowrap" data-testid={`calendar-show-city-${e.id}`}>{v.address.city}</span>}</td>
                 <td className="name">
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1"><EventActs e={e} /><EventBadges e={e} stats={records.get(e.venueId) ?? null} today={today} genres={genres} isNew={!!since && e.firstSeenAt > since} /></div>
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1"><EventActs e={e} /><EventBadges e={e} today={today} isNew={!!since && e.firstSeenAt > since} /></div>
                   {titleSaysMore(e) && <span className="sub">{e.title}</span>}
                   {g.length > 0 && <span className="sub" data-testid={`calendar-show-genres-${e.id}`}>{g.slice(0, 3).join(" · ")}</span>}
                   {e.ticketUrl && <span className="sub"><TicketLink e={e} /></span>}

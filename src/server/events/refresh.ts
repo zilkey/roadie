@@ -11,7 +11,7 @@ import { systemCtx } from "../ctx";
 import { AppError } from "../errors";
 import { DEFAULT_TIME_ZONE } from "@/lib/timezone";
 import { roomStats } from "@/lib/venueEvents";
-import { VenueCalendar, VenueEvent, type VenueEventSource } from "@/schema";
+import { VenueCalendar, VenueEvent, type OpenerSlot, type VenueEventSource } from "@/schema";
 import { Net } from "./fetch";
 import { cleanTitle, isMusic, reconcileActs, splitTitle } from "./bill";
 import { parseDateText, parseTime, resolveStartsAt, todayIn } from "./dates";
@@ -19,6 +19,7 @@ import type { RawEvent, ReaderCtx, ReaderResult } from "./types";
 import { READERS } from "./readers";
 import { linkActs } from "./acts";
 import { markTours } from "./onTour";
+import { guessOpenerSlots, type GuessRoom } from "./openerGuess";
 
 export type EventDraft = Omit<VenueEvent, "id" | "venueId" | "source" | "firstSeenAt" | "lastSeenAt">;
 export interface ReadOutcome { events: EventDraft[]; unparsed: number; dropped: number; raw: number; bill: ReaderResult["bill"] }
@@ -129,7 +130,8 @@ export async function upsertEvents(venueId: string, type: VenueCalendar["type"],
     keep.add(id);
     const prev = existing.get(id);
     if (!prev) added++;
-    const doc = VenueEvent.parse({ ...d, id, venueId, source: type, firstSeenAt: (prev?.firstSeenAt as string | undefined) ?? nowIso, lastSeenAt: nowIso });
+    const slot = keepSlot(prev?.openerSlot as OpenerSlot | undefined, d, nowIso);
+    const doc = VenueEvent.parse({ ...d, id, venueId, source: type, ...(slot ? { openerSlot: slot } : {}), firstSeenAt: (prev?.firstSeenAt as string | undefined) ?? nowIso, lastSeenAt: nowIso });
     writes.push([`venueEvents/${id}`, doc]);
   }
   // A source that suddenly lists nothing (a bot wall, a redesign) is flagged on the venue's health, not taken as every show
@@ -142,6 +144,31 @@ export async function upsertEvents(venueId: string, type: VenueCalendar["type"],
   await writeAll(writes);
   return { added, gone };
 }
+/**
+ * A show's opener slot across refreshes: a person's stays as they set it; a guess that said open turns off once the calendar
+ * lists support. Shows with none get the import's guess after the write (guessNew).
+ */
+export function keepSlot(prev: OpenerSlot | undefined, d: Pick<EventDraft, "acts">, nowIso: string): OpenerSlot | undefined {
+  if (prev?.by === "guess" && prev.open && d.acts.some((a) => a.role !== "headliner")) return { open: false, by: "guess", why: "Support now listed", at: nowIso };
+  return prev;
+}
+
+/** The import's guess for every upcoming show of this room that has none yet (new ones, and any from before the field). */
+async function guessNew(v: Doc, stored: VenueEvent[], record: GuessRoom["stats"], today: string, now: Date) {
+  const need = stored.filter((e) => !e.openerSlot && e.date >= today && e.status !== "gone" && e.status !== "cancelled");
+  if (!need.length) return;
+  const typeLabel = v.type ? String((await db.get(sys(), "venueTypes", String(v.type)))?.label ?? v.type) : undefined;
+  const room: GuessRoom = { name: String(v.name), type: typeLabel, capacity: v.capacity as number | undefined, city: (v.address as { city?: string } | undefined)?.city, stats: record };
+  const got = await guessOpenerSlots(need, room, today, { now });
+  const fs = firestore();
+  const list = [...got];
+  for (let i = 0; i < list.length; i += 400) {
+    const b = fs.batch();
+    for (const [id, slot] of list.slice(i, i + 400)) b.update(fs.doc(`venueEvents/${id}`), { openerSlot: slot });
+    await b.commit();
+  }
+}
+
 const stripId = (d: Doc) => { const { id: _id, ...rest } = d; return rest; };
 
 /** Refresh one venue. Never throws for a source's failure: it is recorded on the venue's health and returned. */
@@ -166,6 +193,8 @@ export async function refreshVenue(venueId: string, opts: { net?: Net; now?: Dat
     const record = roomStats(stored as unknown as VenueEvent[], today);
     // On tour: this room's upcoming headliners (gone ones too, so a run that broke up is unmarked), across every room listing them.
     await markTours(sys(), (stored as unknown as VenueEvent[]).filter((e) => e.date >= today).flatMap((e) => e.acts.filter((a) => a.role === "headliner" && a.actId).map((a) => a.actId!)), today);
+    // On tour is marked now, so the guess sees it. Re-read: markTours wrote tourStops.
+    await guessNew(v, (await db.list(sys(), "venueEvents", (q) => q.where("venueId", "==", venueId), { includeDeleted: true })) as unknown as VenueEvent[], record, today, now);
     Object.assign(health, { lastSuccessAt: health.lastRunAt, lastCount: out.events.length, lastUnparsed: out.unparsed, ...record });
     await firestore().doc(`venueEventSources/${venueId}`).set(health);
     return { ...base, type: cal.type, count: out.events.length, upcoming: out.events.filter((e) => e.date >= today).length, added, gone, unparsed: out.unparsed, dropped: out.dropped };

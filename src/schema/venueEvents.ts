@@ -75,6 +75,10 @@ export type Act = z.infer<typeof Act>;
 export const billDetail = z.enum(["full", "headliner", "title"]);
 export const eventStatus = z.enum(["onsale", "soldout", "cancelled", "gone"]);
 
+/** A show's opener slot: open or not, who said so (the import's guess or a person), and why (the guess's one-line reason). */
+export const OpenerSlot = z.strictObject({ open: z.boolean(), by: z.enum(["guess", "person"]), why: z.string().optional(), at: z.string() });
+export type OpenerSlot = z.infer<typeof OpenerSlot>;
+
 /** `venueEvents/{id}`: id = `{venueId}__{hash of sourceId}`. */
 export const VenueEvent = z.strictObject({
   id,
@@ -96,6 +100,12 @@ export const VenueEvent = z.strictObject({
   nights: z.number().int().optional(),
   /** On tour (#79): how many Colorado rooms the headliner plays within a few weeks of this show (2+), set after each refresh. */
   tourStops: z.number().int().optional(),
+  /**
+   * Is there an opener slot to pitch? State, not a formula: guessed once when refresh first sees an upcoming show
+   * (src/server/events/openerGuess.ts: the rules' read, the weekday and the room fed to Sonnet), then set by a person's x or
+   * "+ Opener slot" (venueEvents.setOpenerSlot), which no refresh overwrites. A guess turns off by itself when support is listed.
+   */
+  openerSlot: OpenerSlot.optional(),
   imageUrl: z.string().optional(),
   ticketUrl: z.string().optional(),
   status: eventStatus,

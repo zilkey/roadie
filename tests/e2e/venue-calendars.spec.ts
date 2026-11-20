@@ -53,7 +53,9 @@ test("an admin browses every venue's upcoming shows, a page at a time, and opens
   const trio = shows(page).nth(0);
   await expect(trio.getByTestId("venue-event-acts")).toHaveText("Headline Example Trio");
   await expect(shows(page).nth(1).getByTestId("venue-event-acts")).toHaveText("Lone Example Act");
-  await expect(shows(page).nth(1).getByTestId("venue-event-chance")).toHaveText("Maybe");
+  // one act listed, no sign the room adds openers: the import's guess is no, so no badge, and "+ Opener slot" can add one
+  await expect(shows(page).nth(1).getByTestId("venue-event-chance")).toHaveCount(0);
+  await expect(shows(page).nth(1).getByTestId(/^opener-slot-on-/)).toHaveText("+ Opener slot");
   // past shows are not upcoming
   await expect(page.getByTestId("venue-calendars")).not.toContainText("Retired Example Duo");
 
@@ -69,6 +71,8 @@ test("an admin browses every venue's upcoming shows, a page at a time, and opens
   await expect(soonest.getByTestId("calendar-show-poster-noimage")).toBeVisible();
   await expect(trio.getByTestId("venue-event-acts")).toHaveText("Headline Example Trio");
   await expect(trio.getByTestId("venue-event-chance")).toHaveText("Likely opener slot");
+  await expect(trio.getByTestId("venue-event-chance")).toHaveAttribute("data-by", "guess");
+  await expect(trio.getByTestId("venue-event-chance")).toHaveAttribute("title", /^Roadie’s guess at import: Support still to be announced/);
   await expect(trio.getByTestId("calendar-show-poster-image")).toHaveAttribute("src", "/icon-192.png");
   await expect(trio.getByTestId("calendar-show-poster-image")).toHaveAttribute("referrerpolicy", "no-referrer");
   await expect(page.getByTestId("opener-disclaimer")).toBeVisible();
@@ -173,6 +177,24 @@ test("a search on the Venue calendars tab shows the search cards, and clearing i
   await expect(shows(page).first()).toBeVisible();
 });
 
+test("the opener slot is state: the badge's x turns it off, + Opener slot turns it back on, and the default filter follows it", async ({ page }) => {
+  await signInAs(page, "rudy");
+  await page.goto(A("/booking/calendars"));
+  const trio = shows(page).filter({ hasText: "Headline Example Trio" });
+  await expect(shows(page)).toHaveCount(1); // the default lists only shows with an opener slot
+  await expect(trio.getByTestId("venue-event-chance")).toHaveText("Likely opener slot");
+  await trio.getByTestId(/^opener-slot-off-/).click();
+  // off: gone from "Likely needs an opener"
+  await expect(shows(page)).toHaveCount(0);
+  await everyShow(page);
+  await expect(trio.getByTestId("venue-event-chance")).toHaveCount(0);
+  await trio.getByTestId(/^opener-slot-on-/).click();
+  await expect(trio.getByTestId("venue-event-chance")).toHaveAttribute("data-by", "person");
+  await expect(trio.getByTestId("venue-event-chance")).toHaveAttribute("title", "Set by hand");
+  await page.getByTestId("calendar-filter-show").selectOption("likely");
+  await expect(shows(page)).toHaveCount(1);
+});
+
 test("the filters add up, read on past hidden shows and are remembered", async ({ page }) => {
   await signInAs(page, "rudy");
   await page.goto(A("/booking/calendars"));
@@ -185,7 +207,7 @@ test("the filters add up, read on past hidden shows and are remembered", async (
   await expect(page.getByTestId("calendar-filter-genre")).toHaveText("Any genre");
   await expect(page.getByTestId("calendar-filter-region")).toHaveValue("");
   await expect(page.getByTestId("calendar-filter-when")).toHaveValue("any");
-  await expect(page.getByTestId("opener-disclaimer")).toHaveText("Opener chance is a guess from the listing, not perfect. Hover a badge for why.");
+  await expect(page.getByTestId("opener-disclaimer")).toContainText("Roadie's best guess when a show first lands on the calendar");
   await expect(shows(page)).toHaveCount(1);
   await expect(row("Headline Example Trio")).toHaveCount(1);
 

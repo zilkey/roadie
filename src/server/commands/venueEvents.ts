@@ -14,7 +14,8 @@ import { pathOf } from "@/schema/owners";
 import type { Ctx } from "../ctx";
 import { lookAtCalendars } from "../prefs";
 import { venueZoneOr, zoneOf } from "../zone";
-import { SHOW_TAKES, VenueCalendar, selectorFields, venueEventNoteId, type Act } from "@/schema";
+import { SHOW_TAKES, VenueCalendar, selectorFields, venueEventNoteId, type Act, type OpenerSlot } from "@/schema";
+import { firestore } from "../admin";
 import { sortedDates } from "@/lib/booking";
 import { fmtEventDay } from "@/lib/venueEvents";
 import { flagPitch } from "./booking";
@@ -156,6 +157,20 @@ export const venueEventsUnpitch = defineCommand({
   }),
 });
 
+export const venueEventsSetOpenerSlot = defineCommand({
+  name: "venueEvents.setOpenerSlot", roles: ["admin"],
+  description: "Say whether one of a venue's shows has an opener slot to pitch (the badge's x is false, \"+ Opener slot\" is true). " +
+    "Shared: every band sees the show's badge. A refresh never changes what a person set.",
+  input: z.strictObject({ eventId: z.string().min(1), open: z.boolean() }),
+  run: async (ctx, { eventId, open }) => {
+    await requireEvent(ctx, eventId);
+    // A fact about the show, not the room's house facts: written like refresh writes the show (no shared-edit approval, no History).
+    const openerSlot: OpenerSlot = { open, by: "person", at: new Date().toISOString() };
+    await firestore().doc(`venueEvents/${eventId}`).update({ openerSlot });
+    return { eventId, openerSlot };
+  },
+});
+
 export const venueEventsLooked = defineCommand({
   name: "venueEvents.looked", roles: ["admin", "member"], input: z.strictObject({}),
   description: "Remember that the caller just opened Booking's Venue calendars; returns when they last looked before (null the first time), for its New chips. Personal: nobody else's chips change.",
@@ -164,4 +179,4 @@ export const venueEventsLooked = defineCommand({
   },
 });
 
-export const venueEventCommands = [venueEventsLooked, venuesSetCalendar, venueEventsRefresh, venueEventsPreview, venueEventsSuggest, venueEventsSetTake, venueEventsPitch, venueEventsUnpitch];
+export const venueEventCommands = [venueEventsLooked, venuesSetCalendar, venueEventsRefresh, venueEventsPreview, venueEventsSuggest, venueEventsSetTake, venueEventsSetOpenerSlot, venueEventsPitch, venueEventsUnpitch];

@@ -278,6 +278,8 @@ fieldset.sec { margin: 0; }
 .show-scroll { overflow-x: auto; }
 /* Booking lists: one table per tab, 100% wide with a min width; the card scrolls sideways on phones. */
 .book-tw { min-width: 0; max-width: 100%; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; overflow-x: auto; }
+/* A show without an opener slot: "+ Opener slot" shows on the row's hover (always on touch screens) and on focus. */
+@media (hover: hover) { .show-row:not(:hover) .opener-add:not(:focus-visible) { opacity: 0; } }
 .book-table { width: 100%; min-width: 900px; border-collapse: collapse; font-size: 0.9375rem; }
 .book-table th { text-align: left; padding: 12px 14px; font-size: 0.8125rem; font-weight: 600; color: var(--muted); background: var(--empty); border-bottom: 1px solid var(--border); white-space: nowrap; }
 .book-table th.text-right, .book-table td.text-right { text-align: right; }

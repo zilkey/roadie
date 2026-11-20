@@ -147,6 +147,8 @@ test("a member sees the shows but cannot set a take or change the source", async
   await allShows(page);
   await expect(shows(page)).toHaveCount(3);
   await expect(shows(page).filter({ hasText: "Headline Example Trio" }).getByTestId("venue-event-chance")).toBeVisible();
+  // members see the badge but can't change it
+  await expect(page.locator('[data-testid^="opener-slot-"]')).toHaveCount(0);
   await expect(page.getByText("Our take")).toHaveCount(0);
   await expect(page.locator('[data-testid^="venue-event-take-"]')).toHaveCount(0);
   await expect(page.getByTestId("venue-calendar-setup")).toHaveCount(0);

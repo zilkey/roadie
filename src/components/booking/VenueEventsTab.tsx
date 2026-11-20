@@ -1,7 +1,7 @@
 "use client";
 /**
  * A venue's Events tab (issue #60): the room's upcoming shows as its own calendar lists them, with the bill, a badge when it
- * might need an opener (a guess: openerChance in src/lib/venueEvents.ts), and this band's take on each; past shows collapsed
+ * have an opener slot (the stored openerSlot: guessed at import, set by hand with the badge's x or "+ Opener slot"), and this band's take on each; past shows collapsed
  * below (who plays the room); the calendar source, when it last refreshed, the room's record ("Books openers: often"), and Refresh. No design-canvas board exists for this tab yet: it follows the venue page's cards.
  * Each show has the same pitch flag and Not a fit as Booking's Venue calendars (ShowActions). The upcoming shows are furthest out
  * first, under the same filters as Venue calendars (ShowFilterBar), remembered on their own.
@@ -12,12 +12,12 @@ import { useArtist, useZone } from "@/lib/artist";
 import { useCollection, useDoc, useDocs } from "@/lib/firestore-hooks";
 import { Dialog, ErrorBox, useCommand } from "@/components/ui";
 import { CardGroup, DetailCard } from "@/components/booking/DetailCards";
-import { BOOKS_OPENERS_LABEL, CALENDAR_LABEL, booksOpeners, byWhen, calendarHref, eventTime, fmtClock, fmtEventDay, fmtEventYear, genreOptions, isUpcoming, latestFirst, openerChance, showListed, titleSaysMore, whenFrom, type OpenerCtx, type ShowFilter } from "@/lib/venueEvents";
+import { BOOKS_OPENERS_LABEL, CALENDAR_LABEL, booksOpeners, byWhen, calendarHref, eventTime, fmtClock, fmtEventDay, fmtEventYear, genreOptions, isUpcoming, latestFirst, showListed, titleSaysMore, whenFrom, type ShowFilter } from "@/lib/venueEvents";
 import { ShowFilterBar, useShowFilter } from "@/components/booking/ShowFilters";
 import { CalendarShowsTable } from "@/components/booking/CalendarShowsTable";
 import { isActive } from "@/lib/booking";
 import { useOurGenres } from "@/components/booking/useOurGenres";
-import { ActName, EventActs, EventBadges, EventPoster, OpenerNote, ShowActions, TicketLink, type Ev, type LineupAct, type RoomRecord } from "@/components/booking/VenueEventBits";
+import { ActName, EventActs, EventBadges, EventPoster, OpenerNote, ShowActions, TicketLink, type Ev, type LineupAct } from "@/components/booking/VenueEventBits";
 import { dateInZone } from "@/lib/timezone";
 import { CALENDAR_TYPES, PRESETS, type CalendarType, type ActDoc, type Venue, type VenueCalendar, type VenueEvent, type VenueEventNote, type VenueEventSource } from "@/schema";
 
@@ -56,14 +56,13 @@ export function VenueEventsTab({ venue, admin, canEditShared = true }: { venue: 
   const actGenres = useMemo(() => new Map(acts.rows.map((a) => [a.id, a.genres])), [acts.rows]);
   const actLinks = useMemo(() => new Map(acts.rows.map((a) => [a.id, a.links])), [acts.rows]);
   const actLineups = useMemo(() => new Map(acts.rows.map((a) => [a.id, a as LineupAct])), [acts.rows]);
-  const genres = useMemo(() => (ours.length ? { ours, acts: actGenres } : null), [ours, actGenres]);
   const genreChoices = useMemo(() => genreOptions(ours, actGenres.values()), [ours, actGenres]);
   const [f, setF] = useShowFilter("venueEventsShows", {});
   const change = (patch: Partial<ShowFilter>) => setF({ ...f, ...patch });
   const from = whenFrom(today, f.when);
   const openPitches = new Set((pitches.rows ?? []).filter((p) => isActive(p.status)).map((p) => p.id));
   const shown = upcoming.filter((e) => showListed(e, { ...f, hideNotFit: admin && f.hideNotFit, hideFlagged: admin && f.hideFlagged }, {
-    from, take: takes.get(e.id)?.take, flagged: !!takes.get(e.id)?.pitchId && openPitches.has(takes.get(e.id)!.pitchId!), acts: actGenres, chance: () => openerChance(e, health, today, genres).chance }));
+    from, take: takes.get(e.id)?.take, flagged: !!takes.get(e.id)?.pitchId && openPitches.has(takes.get(e.id)!.pitchId!), acts: actGenres }));
 
   return (
     <>
@@ -75,8 +74,8 @@ export function VenueEventsTab({ venue, admin, canEditShared = true }: { venue: 
             {!events.rows ? <div className="s">Loading…</div>
               : upcoming.length === 0 ? <div className="empty" data-testid="venue-events-empty">{cal ? "No upcoming shows on the venue's calendar." : "Shows appear here once the venue's calendar is set up."}</div>
               : shown.length === 0 ? <div className="empty" data-testid="venue-events-none">No upcoming shows here match these filters.</div>
-              : <div data-testid="venue-events-list"><CalendarShowsTable shows={shown} venues={new Map([[venue.id, venue]])} takes={takes} pitches={pitches.rows ?? []} records={new Map([[venue.id, health]])}
-                  today={today} genres={genres} actGenres={actGenres} actLinks={actLinks} actLineups={actLineups} showVenue={false} admin={admin} /></div>}
+              : <div data-testid="venue-events-list"><CalendarShowsTable shows={shown} venues={new Map([[venue.id, venue]])} takes={takes} pitches={pitches.rows ?? []}
+                  today={today} actGenres={actGenres} actLinks={actLinks} actLineups={actLineups} showVenue={false} admin={admin} /></div>}
             {!!upcoming.length && <div className="mt-3"><OpenerNote /></div>}
           </DetailCard>
         )}

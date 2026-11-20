@@ -207,7 +207,7 @@ export function whenFrom(today: string, when: CalendarWhen): string {
   return when === "any" ? today : addMonths(today, when === "3m" ? 3 : 6);
 }
 
-/** Which shows: likely opener slots only, or all of them. */
+/** Which shows: the ones with an opener slot (VenueEvent.openerSlot), or all of them. */
 export type ShowChance = "likely" | "all";
 export const SHOW_CHANCE: [ShowChance, string][] = [["likely", "Likely needs an opener"], ["all", "All shows"]];
 /**
@@ -261,15 +261,15 @@ export const headlinerGenres = (e: Pick<VenueEvent, "acts">, acts: ReadonlyMap<s
   e.acts.filter((a) => a.role === "headliner" && a.actId).flatMap((a) => acts.get(a.actId!) ?? []);
 
 /**
- * Whether a show passes the filters. `flagged` is whether it's on an open pitch (its flag is filled). `chance` is asked last (it's
- * the dearest), and only when the filter needs it.
+ * Whether a show passes the filters. `flagged` is whether it's on an open pitch (its flag is filled). "Likely needs an opener"
+ * reads the show's stored opener slot.
  */
-export function showListed(e: Pick<VenueEvent, "acts" | "date">, f: ShowFilter, x: { from: string; take?: string; flagged?: boolean; acts: ReadonlyMap<string, readonly string[] | undefined>; chance(): OpenerChance }): boolean {
+export function showListed(e: Pick<VenueEvent, "acts" | "date" | "openerSlot">, f: ShowFilter, x: { from: string; take?: string; flagged?: boolean; acts: ReadonlyMap<string, readonly string[] | undefined> }): boolean {
   if (e.date < x.from) return false;
   if (f.hideNotFit && x.take === "notFit") return false;
   if (f.hideFlagged && x.flagged) return false;
   if (!genresMatch(f.genres, headlinerGenres(e, x.acts))) return false;
-  if (f.show === "likely" && x.chance() !== "likely") return false;
+  if (f.show === "likely" && !e.openerSlot?.open) return false;
   return true;
 }
 

@@ -629,9 +629,10 @@ describe("whenFrom (the When filter)", () => {
 
 describe("show filters", () => {
   const TODAY = "2026-11-11";
-  const ev = (date: string, actId = "a1", start?: string) => ({ date, start, acts: [{ name: "A", role: "headliner" as const, actId }, { name: "B", role: "support" as const, actId: "b1" }] });
+  const slot = (open: boolean) => ({ open, by: "guess" as const, at: "2026-11-01T00:00:00Z" });
+  const ev = (date: string, actId = "a1", start?: string, open = true) => ({ date, start, openerSlot: slot(open), acts: [{ name: "A", role: "headliner" as const, actId }, { name: "B", role: "support" as const, actId: "b1" }] });
   const acts = new Map<string, string[] | undefined>([["a1", ["indie folk"]], ["a2", ["death metal"]], ["b1", ["indie rock"]]]);
-  const x = (o: Partial<Parameters<typeof showListed>[2]> = {}) => ({ from: TODAY, acts, chance: () => "likely" as const, ...o });
+  const x = (o: Partial<Parameters<typeof showListed>[2]> = {}) => ({ from: TODAY, acts, ...o });
   test("furthest out first, then the later start on a day", () => {
     const rows = [ev("2026-12-01"), ev("2027-06-01"), ev("2027-01-01", "a1", "19:00"), ev("2027-01-01", "a1", "21:00")].sort(latestFirst);
     assert.deepEqual(rows.map((r) => `${r.date} ${r.start ?? ""}`.trim()), ["2027-06-01", "2027-01-01 21:00", "2027-01-01 19:00", "2026-12-01"]);
@@ -651,8 +652,10 @@ describe("show filters", () => {
   test("the filters add up: likely, not hidden, the main act's genre and far enough out", () => {
     const f = { ...DEFAULT_SHOW_FILTER, genres: ["indie"] };
     assert.equal(showListed(ev("2027-01-01"), f, x()), true);
-    assert.equal(showListed(ev("2027-01-01"), f, x({ chance: () => "maybe" })), false);
-    assert.equal(showListed(ev("2027-01-01"), { ...f, show: "all" }, x({ chance: () => "maybe" })), true);
+    // "Likely needs an opener" reads the stored slot: off, or none yet, isn't listed
+    assert.equal(showListed(ev("2027-01-01", "a1", undefined, false), f, x()), false);
+    assert.equal(showListed({ ...ev("2027-01-01"), openerSlot: undefined }, f, x()), false);
+    assert.equal(showListed(ev("2027-01-01", "a1", undefined, false), { ...f, show: "all" }, x()), true);
     assert.equal(showListed(ev("2027-01-01"), f, x({ take: "notFit" })), false);
     assert.equal(showListed(ev("2027-01-01"), { ...f, hideNotFit: false }, x({ take: "notFit" })), true);
     assert.equal(showListed(ev("2027-01-01"), f, x({ flagged: true })), true); // flagged shows stay by default
