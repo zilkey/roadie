@@ -34,7 +34,7 @@ after(async () => { await stopFakes(); fs.rmSync(fakesDir, { recursive: true, fo
 beforeEach(async () => {
   await resetEmulators();
   const u = await makeUser("rudy@example.com", "admin");
-  ctx = { uid: u.uid, role: "admin", via: "app", runId: newRunId(), artistId: TEST_ARTIST };
+  ctx = { uid: u.uid, role: "admin", via: "app", runId: newRunId(), artistId: TEST_ARTIST, now: NOW };
 });
 
 const makeVenue = async (name: string, city = "Denver", state = "CO") =>

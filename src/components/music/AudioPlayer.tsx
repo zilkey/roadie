@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useId, useRef, useState, useSyncExternalStore, type KeyboardEvent, type PointerEvent } from "react";
+import { useEffect, useId, useRef, useState, useSyncExternalStore, type PointerEvent } from "react";
 import { artistHeaders } from "@/lib/commands";
 import { clientAuth } from "@/lib/firebase-client";
 
@@ -10,6 +10,9 @@ import { clientAuth } from "@/lib/firebase-client";
  * moment of silence) because Safari only lets an element play later if it first played in a user gesture -- the real
  * bytes come after a fetch. Drive files come through /api/files/[id]/audio as the band account; a direct link to an
  * audio file is fetched as is, and when its host won't allow that it still plays, just without a waveform.
+ *
+ * While a file is open, the keyboard drives it from anywhere on the page (except while typing in a field): Space plays
+ * and pauses, and the left and right arrows jump back and ahead SKIP seconds.
  */
 
 export interface AudioFile { id: string; url: string; title: string; driveFileId?: string }
@@ -20,6 +23,8 @@ const BARS = 160;
 const PEAK_RATE = 4000;
 /** Loaded files kept for replaying (the blob plus its peaks); older ones are let go. */
 const KEEP = 3;
+/** Seconds the left and right arrows jump. */
+const SKIP = 15;
 const SILENCE = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=";
 
 interface Loaded { src: string; peaks: number[] | null }
@@ -40,6 +45,39 @@ function audio(): HTMLAudioElement {
   const sync = () => { if (el!.src !== SILENCE) set({ playing: !el!.paused && !el!.ended, time: el!.currentTime, duration: Number.isFinite(el!.duration) ? el!.duration : 0 }); };
   for (const ev of ["play", "pause", "ended", "timeupdate", "durationchange", "loadedmetadata", "seeked"]) el.addEventListener(ev, sync);
   return el;
+}
+
+/** Typing in a field keeps its own Space and arrows. */
+function typing(t: EventTarget | null) {
+  if (!(t instanceof HTMLElement)) return false;
+  if (t.isContentEditable || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement) return true;
+  return t instanceof HTMLInputElement && !["button", "checkbox", "radio", "submit", "reset", "file", "image", "color"].includes(t.type);
+}
+
+/**
+ * Space and the arrows, page-wide, while a file is open and loaded. Caught before anything else sees them, and Space's
+ * keyup is swallowed too: otherwise a focused button (the row's Play / Hide) would also click, closing and restarting it.
+ */
+function onKey(e: globalThis.KeyboardEvent) {
+  if (!state.owner || !el || el.src === SILENCE || e.metaKey || e.ctrlKey || e.altKey || typing(e.target)) return;
+  const space = e.key === " " || e.code === "Space";
+  const step = e.key === "ArrowRight" ? SKIP : e.key === "ArrowLeft" ? -SKIP : 0;
+  if (!space && !step) return;
+  e.preventDefault();
+  e.stopPropagation();
+  if (e.type !== "keydown") return;
+  if (space) {
+    if (e.repeat) return;
+    if (el.paused || el.ended) void el.play().catch(() => {}); else el.pause();
+  } else {
+    const end = Number.isFinite(el.duration) ? el.duration : Infinity;
+    el.currentTime = Math.max(0, Math.min(end, el.currentTime + step));
+    set({ time: el.currentTime });
+  }
+}
+if (typeof window !== "undefined") {
+  window.addEventListener("keydown", onKey, true);
+  window.addEventListener("keyup", onKey, true);
 }
 
 /** Take the element for `id` (call inside the click). Whatever was playing stops. */
@@ -196,11 +234,6 @@ export function AudioPanel({ file }: { file: AudioFile }) {
     const r = bar.current?.getBoundingClientRect();
     if (r && r.width) seekTo((e.clientX - r.left) / r.width);
   };
-  const keys = (e: KeyboardEvent) => {
-    const step = e.key === "ArrowRight" ? 5 : e.key === "ArrowLeft" ? -5 : 0;
-    if (step && duration) { e.preventDefault(); seekTo((time + step) / duration); }
-    else if (e.key === " ") { e.preventDefault(); toggle(); }
-  };
 
   if (error) return <div className="ap" data-testid="audio-panel"><span className="sg-warn" data-testid="audio-error">{error}</span></div>;
   return (
@@ -214,7 +247,7 @@ export function AudioPanel({ file }: { file: AudioFile }) {
         aria-valuemin={0} aria-valuemax={Math.round(duration)} aria-valuenow={Math.round(time)} aria-valuetext={`${fmtTime(time)} of ${fmtTime(duration)}`}
         onPointerDown={(e) => { if (!ready) return; e.currentTarget.setPointerCapture(e.pointerId); seekAt(e); }}
         onPointerMove={(e) => { if (e.currentTarget.hasPointerCapture(e.pointerId)) seekAt(e); }}
-        onKeyDown={keys} data-testid="audio-wave">
+        data-testid="audio-wave">
         {!ready ? <span className="ap-loading" data-testid="audio-loading">Loading… {pct ? `${pct}%` : ""}</span>
           : ready.peaks ? <Wave peaks={ready.peaks} frac={frac} />
           : <div className="ap-line"><div style={{ width: `${frac * 100}%` }} /></div>}

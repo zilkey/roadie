@@ -339,6 +339,18 @@ test("create a rehearsal, add songs from the search, attach the recording from D
   await expect(panel.getByTestId("audio-time")).not.toHaveText(/^0:00/);
   await panel.getByTestId("audio-toggle").click();
   await expect(panel).toHaveAttribute("data-state", "paused");
+  // the keyboard drives it from anywhere, even with focus on the row's Hide button: the arrows jump 15s (this take is 4s,
+  // so to its end and back to its start), and Space plays and pauses without the button closing or restarting it
+  await take.getByTestId("file-play").focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(panel.getByTestId("audio-time")).toHaveText("0:04 / 0:04");
+  await page.keyboard.press("ArrowLeft");
+  await expect(panel.getByTestId("audio-time")).toHaveText("0:00 / 0:04");
+  await page.keyboard.press("Space");
+  await expect(panel).toHaveAttribute("data-state", "playing");
+  await page.keyboard.press("Space");
+  await expect(panel).toHaveAttribute("data-state", "paused");
+  await expect(take.getByTestId("file-play")).toHaveText("Hide");
   await take.getByTestId("file-play").click();
   await expect(take.getByTestId("audio-panel")).toHaveCount(0);
 

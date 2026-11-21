@@ -24,6 +24,8 @@ test("a pitch in a campaign: the sidebar marks the campaign and the crumbs lead 
   try {
     await page.goto(A("/booking/campaigns"));
     await expectCurrent(page, "booking-seg-campaigns");
+    // The table loads client-side, so the page is hydrated: a click on the server-rendered button before that is lost.
+    await expect(page.getByTestId("campaigns-active")).toBeVisible();
     await page.getByTestId("campaign-new").click();
     await page.getByTestId("campaign-new-name").fill(name);
     await page.getByTestId("campaign-new-create").click();
