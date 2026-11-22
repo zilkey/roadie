@@ -22,6 +22,10 @@ env:
     availability: [ BUILD, RUNTIME ]
   - variable: GCLOUD_PROJECT
     value: roadie-prod-iab
+  # The nightly venue-calendar refresh (docs/designs/venue-refresh.md): /api/cron/venue-calendars accepts only this repo's
+  # .github/workflows/venue-calendars.yml on main, by its GitHub OIDC token. Not a secret.
+  - variable: CRON_GITHUB_REPO
+    value: zilkey/roadie
   # Roadie on Vertex AI with the backend's service account (needs the Vertex AI User role); no API key.
   - variable: ROADIE_MODEL
     value: vertex

@@ -116,11 +116,37 @@ async function writeAll(writes: [string, Record<string, unknown>][]) {
   }
 }
 
+/** A ticket note in brackets ("(TWO-DAY TICKETS)", "[VIP tickets]"): not part of which show it is. */
+const TICKET_NOTE = /[([][^)\]]*\btickets?\b[^)\]]*[)\]]/gi;
+/** Which show a draft is, for de-duping one calendar's listing: its date and headliner, ticket notes aside. */
+export const showKey = (e: Pick<EventDraft, "date" | "title" | "acts">) =>
+  `${e.date}|${(e.acts.find((a) => a.role === "headliner")?.name ?? e.title).replace(TICKET_NOTE, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "")}`;
+/**
+ * One calendar listing the same show twice (two ticket links, a two-day pass, the same row twice): same date and headliner, and the
+ * same start time or one without a time. Different times stay apart (an early and a late show). Keeps the copy already stored (a
+ * band's note or pitch points at it), else the first listed. docs/designs/venue-refresh.md.
+ */
+export function dedupeDrafts(drafts: EventDraft[], stored: (sourceId: string) => boolean): EventDraft[] {
+  const groups = new Map<string, EventDraft[]>();
+  for (const d of drafts) groups.set(showKey(d), [...(groups.get(showKey(d)) ?? []), d]);
+  const drop = new Set<EventDraft>();
+  for (const list of groups.values()) {
+    if (list.length < 2) continue;
+    const kept: EventDraft[] = [];
+    for (const d of [...list.filter((x) => stored(x.sourceId)), ...list.filter((x) => !stored(x.sourceId))]) {
+      const twin = kept.find((k) => !k.start || !d.start || k.start === d.start);
+      if (twin) { drop.add(d); if (!twin.start && d.start) twin.start = d.start; } else kept.push(d);
+    }
+  }
+  return drafts.filter((d) => !drop.has(d));
+}
+
 /** Upsert one venue's drafts. Returns how many were new and how many upcoming ones went missing. */
-export async function upsertEvents(venueId: string, type: VenueCalendar["type"], drafts: EventDraft[], now: Date, tz: string) {
+export async function upsertEvents(venueId: string, type: VenueCalendar["type"], listed: EventDraft[], now: Date, tz: string) {
   const nowIso = now.toISOString();
   const today = todayIn(tz, now);
   const existing = new Map((await db.list(sys(), "venueEvents", (q) => q.where("venueId", "==", venueId), { includeDeleted: true })).map((d) => [d.id, d]));
+  const drafts = dedupeDrafts(listed, (sourceId) => { const p = existing.get(eventId(venueId, sourceId)); return !!p && p.status !== "gone"; });
   await linkActs(drafts); // acts[].actId by matchKey, new acts for new names (#77)
   const writes: [string, Record<string, unknown>][] = [];
   const keep = new Set<string>();
@@ -213,6 +239,27 @@ const pageOf = (c: VenueCalendar) => ("url" in c ? c.url : "baseUrl" in c ? c.ba
  * another; every other venue gets its own, dropped when it's done, so pages aren't all held in memory at once (the whole run
  * in one cache overran the 512 MB App Hosting instance, 2026-11-11).
  */
+/** How many venues one scheduled call refreshes, how many at once, and how old a last run must be to count as stale. */
+export const SLICE = { max: 6, concurrency: 2, staleHours: 20 };
+
+/**
+ * The scheduled refresh's slice (docs/designs/venue-refresh.md): the venues with a readable calendar whose last run is oldest and
+ * more than `staleHours` ago, never-run ones first, at most `max`, refreshed `concurrency` at a time. Small enough for one request
+ * on the 512 MB instance; the venue-calendars GitHub workflow calls it every 15 minutes overnight until every calendar is fresh.
+ */
+export async function refreshStale(opts: { now?: Date; max?: number; concurrency?: number; staleHours?: number } = {}): Promise<{ picked: string[]; results: RefreshResult[] }> {
+  const now = opts.now ?? new Date();
+  const cutoff = new Date(now.getTime() - (opts.staleHours ?? SLICE.staleHours) * 3_600_000).toISOString();
+  const venues = (await db.list(sys(), "venues")).filter((v) => !v.mergedInto && VenueCalendar.safeParse(v.calendar).success && (v.calendar as VenueCalendar).type !== "manual");
+  const lastRun = new Map((await db.list(sys(), "venueEventSources")).map((s) => [String(s.venueId ?? s.id), String(s.lastRunAt ?? "")]));
+  const picked = venues.map((v) => ({ id: v.id, at: lastRun.get(v.id) ?? "" }))
+    .filter((v) => v.at < cutoff)
+    .sort((a, b) => a.at.localeCompare(b.at) || a.id.localeCompare(b.id))
+    .slice(0, opts.max ?? SLICE.max).map((v) => v.id);
+  if (!picked.length) return { picked, results: [] };
+  return { picked, results: await refreshAll({ only: picked, concurrency: opts.concurrency ?? SLICE.concurrency, now }) };
+}
+
 export async function refreshAll(opts: { only?: string[]; concurrency?: number; now?: Date } = {}): Promise<RefreshResult[]> {
   const venues = (await db.list(sys(), "venues")).filter((v) => v.calendar && (v.calendar as VenueCalendar).type !== "manual" && !v.mergedInto && (!opts.only || opts.only.includes(v.id)));
   const groups = new Map<string, Doc[]>();

@@ -160,6 +160,7 @@ const ROUTES: Record<string, string> = {
   "session": "no artist (system view)", "sign-up": "no artist (PersonCtx; closed until phase 9)",
   "invites/[id]/[action]": "no artist: authenticatePerson builds a PersonCtx; the invite names the artist",
   "dev-people": "emulator only", "version": "none: the build id",
+  "cron/venue-calendars": "none: the shared venue directory, as the system job; only the venue-calendars GitHub workflow (OIDC)",
 };
 
 test("every API route is in the routes table", () => {

@@ -9,7 +9,7 @@ import { firestore } from "@/server/admin";
 import { newRunId, type Ctx } from "@/server/ctx";
 import { Net, setFetcher, type RawPage } from "@/server/events/fetch";
 import { roomStats } from "@/lib/venueEvents";
-import { refreshAll, refreshVenue, eventId } from "@/server/events/refresh";
+import { refreshAll, refreshVenue, refreshStale, dedupeDrafts, eventId, type EventDraft } from "@/server/events/refresh";
 import { venueEventNoteId } from "@/schema";
 import { resetEmulators, makeUser, makeArtist, venue, TEST_ARTIST, SYS } from "./helpers";
 
@@ -425,6 +425,66 @@ describe("venueEvents.find", () => {
     assert.equal(r.totals.notFit, 0);
     assert.deepEqual(registry["venueEvents.find"].roles, ["admin", "mcp"]);
     assert.deepEqual(registry["venueEvents.setOpenerSlot"].roles, ["admin", "mcp"]);
+  });
+});
+
+describe("de-duping one calendar's listing (docs/designs/venue-refresh.md)", () => {
+  const draft = (sourceId: string, title: string, start?: string): EventDraft =>
+    ({ sourceId, title, date: "2026-12-11", ...(start ? { start } : {}), acts: [{ name: title, role: "headliner" }], bill: "title", status: "onsale" }) as EventDraft;
+  test("same date and headliner, ticket notes aside, same or missing time: one show; early and late stay apart", () => {
+    const out = dedupeDrafts([
+      draft("a", "Reprise: Recreating Iconic Phish Shows", "21:00"), draft("b", "REPRISE: Recreating Iconic Phish Shows (TWO-DAY TICKETS)", "21:00"),
+      draft("c", "Riot Cabaret", "18:00"), draft("d", "Riot Cabaret", "21:00"),
+      draft("e", "Lone Act"), draft("f", "Lone Act", "20:00"),
+    ], () => false);
+    assert.deepEqual(out.map((d) => d.sourceId), ["a", "c", "d", "e"]);
+    assert.equal(out.find((d) => d.sourceId === "e")!.start, "20:00", "the kept copy takes the time the other one had");
+  });
+  test("keeps the copy already stored", () => {
+    const out = dedupeDrafts([draft("a", "Reprise", "21:00"), draft("b", "Reprise [VIP tickets]", "21:00")], (id) => id === "b");
+    assert.deepEqual(out.map((d) => d.sourceId), ["b"]);
+  });
+  test("a refresh collapses a listed twin and marks the stored twin gone", async () => {
+    const v = await makeVenue({ calendar: CAL });
+    rows = [{ path: "/e/1", title: "Tin Cup Jane", date: "Fri, Dec 18" }, { path: "/e/2", title: "Low Ridge", date: "Sat, Dec 19" }];
+    await refresh(v);
+    rows = [{ path: "/e/1", title: "Tin Cup Jane", date: "Fri, Dec 18" }, { path: "/e/1b", title: "Tin Cup Jane (Two-Day Tickets)", date: "Fri, Dec 18" }, { path: "/e/2", title: "Low Ridge", date: "Sat, Dec 19" }];
+    const r = await refresh(v);
+    assert.equal(r.added, 0, "the ticket twin is not a new show");
+    const live = (await events(v)).filter((e) => e.status !== "gone");
+    assert.deepEqual(live.map((e) => e.title).sort(), ["Low Ridge", "Tin Cup Jane"]);
+  });
+});
+
+describe("refreshStale: the scheduled slice", () => {
+  const sources = async () => new Map((await db.list(SYS, "venueEventSources")).map((s) => [String(s.venueId), String(s.lastRunAt)]));
+  test("never-run first, then the oldest past the cutoff; fresh, manual and merged venues are left out; capped", async () => {
+    rows = [{ path: "/e/1", title: "Tin Cup Jane", date: "Fri, Dec 18" }];
+    const mk = async (name: string, extra: Record<string, unknown> = {}) => (await db.create(ctx, "venues", venue(name, "Denver", { calendar: CAL, ...extra }))).id;
+    const old1 = await mk("Old One"), old2 = await mk("Old Two"), fresh = await mk("Fresh Room"), never = await mk("Never Run");
+    await mk("Manual Room", { calendar: { type: "manual", note: "Instagram only" } });
+    await firestore().doc(`venues/${await mk("Merged Room")}`).update({ mergedInto: old1 });
+    await db.create(ctx, "venues", venue("No Calendar", "Denver"));
+    await refreshVenue(old1, { net: new Net(), now: new Date("2026-11-08T08:00:00Z") });
+    await refreshVenue(old2, { net: new Net(), now: new Date("2026-11-09T08:00:00Z") });
+    await refreshVenue(fresh, { net: new Net(), now: new Date("2026-11-10T10:00:00Z") });
+    const s1 = await refreshStale({ now: NOW, max: 2 });
+    assert.deepEqual(s1.picked, [never, old1]);
+    assert.equal(s1.results.length, 2);
+    assert.ok(s1.results.every((r) => !r.error && r.count === 1));
+    const s2 = await refreshStale({ now: NOW, max: 6 });
+    assert.deepEqual(s2.picked, [old2], "fresh (8 hours old) is not stale yet");
+    assert.deepEqual(await refreshStale({ now: NOW }), { picked: [], results: [] }, "nothing left: returns at once");
+    assert.equal((await sources()).get(old2), NOW.toISOString());
+  });
+  test("a failing calendar is recorded and doesn't stop the slice", async () => {
+    const a = await makeVenue();
+    await db.update(ctx, "venues", a, { calendar: CAL });
+    failWith = "boom";
+    const r = await refreshStale({ now: NOW });
+    assert.deepEqual(r.picked, [a]);
+    assert.match(r.results[0].error ?? "", /boom/);
+    assert.match(String((await db.get(SYS, "venueEventSources", a))!.lastError), /boom/);
   });
 });
 
