@@ -29,7 +29,9 @@ export const EXCLUDED: readonly string[] = [
   "files.docText",    // the song and rehearsal pages' inline Google Doc view (#18); Roadie gets doc text in its own story
   "setlists.pdf",     // the setlist's Download PDF button: exports every chart and saves a file in Drive, a minute's work started by a click
   "tours.sheet",      // rewrites the tour's Google Sheet over anyone's edits there: the Sheet tab's button, after its confirm
-  "venueEvents.",     // venue calendars (#60): refreshing reads strangers' pages; setup is by hand with its preview
+  // venue calendars (#60): refreshing reads strangers' pages; setup is by hand with its preview. Finding shows and the band's take on them are Roadie's.
+  "venueEvents.refresh", "venueEvents.preview", "venueEvents.suggestSelectors",
+  "venueEvents.looked", // the Venue calendars tab's own "last looked", for its New chips
   "venues.setCalendar",
   "acts.lookup", "acts.lookupShortlist", "acts.findTeam", // an act's Look up (#78): searches the web and Spotify on a click on the act page or Acts tab, never from chat
   "platform.",        // Roadie's own platform admin page: the artist list and suspending an artist, by a person's click only
@@ -101,7 +103,7 @@ export const BULK_LIMIT = 5;
 const ONE_RECORD_LISTS = new Set(["shows.setChecklists", "shows.setFields", "shows.setExpenses", "rehearsals.setExpenses", "checklistTemplates.create", "checklistTemplates.update", "checklistTemplates.reorder", "setlistTemplates.update", "setlistTemplates.create", "setlists.setItems", "setlists.seed", "artists.update", "rehearsals.create", "rehearsals.update", "rehearsals.importSetlist", "songs.create", "files.attach", "releases.create", "releases.tracks.add", "releases.tracks.update", "releases.tracks.reorder", "releases.files.attach", "releases.files.copyToFolder", "tours.create", "tours.update", "tours.addPitch", "posts.updateDraft", "shows.posters.attach", "stagePlots.updateInputs", "stagePlots.reorderInputs", "stagePlots.move", "stagePlots.addItems", "stagePlots.removeItems", "stagePlots.setMonitors"]);
 
 /** Reads never ask, whatever they are given. */
-const READ_ONLY = new Set(["checklistTemplates.list", "records.get", "records.list", "shows.list", "search", "availability.check", "stats.movement", "stats.current", "pitches.needingFollowUp", "songs.missingFiles", "receipts.search", "drive.search", "expenses.estimateGas", "geo.autocomplete", "people.list", "help.explain", "setlists.printLink", "setlists.printPrefs", "setlists.showTransitions", "stagePlots.list", "stagePlots.get", "stagePlots.staleShows", "stagePlots.engineerLink", "fans.list", "fans.counts", "fans.near", "fans.newSince", "fans.forBandzoogle", "shows.calendarPreview", "rehearsals.calendarPreview", "tours.list", "tours.get", "tours.summary", "posts.photos", "posts.list", "posts.get"]);
+const READ_ONLY = new Set(["checklistTemplates.list", "records.get", "records.list", "shows.list", "search", "availability.check", "stats.movement", "stats.current", "pitches.needingFollowUp", "songs.missingFiles", "receipts.search", "drive.search", "expenses.estimateGas", "geo.autocomplete", "people.list", "help.explain", "setlists.printLink", "setlists.printPrefs", "setlists.showTransitions", "stagePlots.list", "stagePlots.get", "stagePlots.staleShows", "stagePlots.engineerLink", "fans.list", "fans.counts", "fans.near", "fans.newSince", "fans.forBandzoogle", "shows.calendarPreview", "rehearsals.calendarPreview", "tours.list", "tours.get", "tours.summary", "posts.photos", "posts.list", "posts.get", "venueEvents.find"]);
 
 /** Commands that only read. Everything else may write (the taint rule in tools.ts asks first for all of them). */
 export const isReadOnly = (name: string) => READ_ONLY.has(name);

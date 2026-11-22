@@ -46,10 +46,14 @@ test("an admin refreshes the Bluebird Room's calendar and sees the bills, the op
   await page.getByTestId("venue-calendar-refresh").click();
   await expect(page.getByTestId("venue-calendar-health")).toContainText("found 3 shows");
   await expect(page.getByTestId("venue-calendar-error")).toHaveCount(0);
-  // the default: likely opener slots only
-  await expect(page.getByTestId("venue-events-filter-show")).toHaveValue("likely");
+  // the default on one venue's tab: every show (Venue calendars' list defaults to likely opener slots)
+  await expect(page.getByTestId("venue-events-filter-show")).toHaveValue("all");
+  await expect(page.getByTestId("venue-events-filter-show")).not.toHaveAttribute("data-on", "1");
   await expect(page.getByTestId("venue-events-filter-hide")).toBeChecked();
   await expect(page.getByTestId("venue-events-filter-when")).toHaveValue("any");
+  await expect(shows(page)).toHaveCount(3);
+  await expect(page.getByTestId("venue-events-upcoming")).toContainText("Upcoming shows (3)");
+  await page.getByTestId("venue-events-filter-show").selectOption("likely");
   await expect(shows(page)).toHaveCount(1);
   await expect(page.getByTestId("venue-events-upcoming")).toContainText("Upcoming shows (1 of 3)");
   await allShows(page);

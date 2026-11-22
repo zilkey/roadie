@@ -114,6 +114,8 @@ const EXPECTED = [
   "income.addMany", "expenses.add", "expenses.update", "expenses.remove", "expenses.setPaidBack", "expenses.payPerson", "expenses.markPaid", "expenses.estimateGas", "stats.pull", "stats.importCsv", "stats.current",
   // acts (#77): finding acts, the shortlist, our take
   "acts.find", "acts.create", "acts.update", "acts.shortlist", "acts.note",
+  // venue calendars (#60): finding shows and our take on them (refresh and setup stay in the app)
+  "venueEvents.find", "venueEvents.setTake", "venueEvents.pitch", "venueEvents.unpitch", "venueEvents.setOpenerSlot",
   // geo (address typeahead, read-only)
   "geo.autocomplete", "people.updateDriving",
   // posts (#75): the Socials folder; the rest of Posts joins as its phases land

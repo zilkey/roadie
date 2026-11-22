@@ -14,13 +14,13 @@ import { XIcon } from "@/components/booking/ActsTab";
 import { CALENDAR_WHEN, DEFAULT_SHOW_FILTER, readShowFilter, SHOW_CHANCE, type CalendarWhen, type ShowChance, type ShowFilter } from "@/lib/venueEvents";
 
 /** [filter, setFilter] for `name`: remembered per signed-in viewer on this device (read after mount, so the first render matches the server). */
-export function useShowFilter<X extends object>(name: string, extra: X): [ShowFilter & X, (f: ShowFilter & X) => void] {
+export function useShowFilter<X extends object>(name: string, extra: X, base: ShowFilter = DEFAULT_SHOW_FILTER): [ShowFilter & X, (f: ShowFilter & X) => void] {
   const key = () => `${name}:${clientAuth().currentUser?.uid ?? "anon"}`;
-  const [f, set] = useState<ShowFilter & X>({ ...DEFAULT_SHOW_FILTER, ...extra });
+  const [f, set] = useState<ShowFilter & X>({ ...base, ...extra });
   useEffect(() => {
     try {
       const v = localStorage.getItem(key());
-      if (v) { const o = JSON.parse(v); set({ ...extra, ...pickExtra(o, extra), ...readShowFilter(o) }); }
+      if (v) { const o = JSON.parse(v); set({ ...extra, ...pickExtra(o, extra), ...readShowFilter(o, base) }); }
     } catch { /* nothing remembered */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -37,22 +37,24 @@ function pickExtra<X extends object>(o: Record<string, unknown>, extra: X): Part
  * far end (Venue calendars' "New flags go to", which isn't a filter). A menu off its default is tinted, so a changed filter stands
  * out. Test ids: `${testid}-show`, `-genre`, `-when`, `-hide` (not a fit), `-hide-flagged`.
  */
-export function ShowFilterBar({ f, onChange, genres, canTake, testid, children, trailing }: {
+export function ShowFilterBar({ f, onChange, genres, canTake, testid, children, trailing, defaults = DEFAULT_SHOW_FILTER }: {
   f: ShowFilter; onChange(patch: Partial<ShowFilter>): void; genres: { ours: string[]; rest: string[] }; canTake: boolean; testid: string;
+  /** What "off its default" means for the tint: one venue's tab defaults to every show. */
+  defaults?: ShowFilter;
   children?: React.ReactNode; trailing?: React.ReactNode;
 }) {
   const toOption = (g: string) => ({ key: g, label: g });
   return (
     <div className="filter-bar show-filters" role="group" aria-label="Filter shows" data-testid={testid}>
       <select className="select" value={f.show} onChange={(e) => onChange({ show: e.target.value as ShowChance })} aria-label="Which shows"
-        data-on={f.show !== DEFAULT_SHOW_FILTER.show ? "1" : undefined} data-testid={`${testid}-show`}>
+        data-on={f.show !== defaults.show ? "1" : undefined} data-testid={`${testid}-show`}>
         {SHOW_CHANCE.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
       </select>
       <CheckFilter label="Main act's genre" all="Any genre" noun="genres" value={f.genres} onChange={(v) => onChange({ genres: v })} testid={`${testid}-genre`}
         groups={[{ label: genres.ours.length ? "Our genres" : undefined, options: genres.ours.map(toOption) }, { label: genres.ours.length ? "Other genres" : undefined, options: genres.rest.map(toOption) }]} />
       {children}
       <select className="select" value={f.when} onChange={(e) => onChange({ when: e.target.value as CalendarWhen })} aria-label="When"
-        data-on={f.when !== DEFAULT_SHOW_FILTER.when ? "1" : undefined} data-testid={`${testid}-when`}>
+        data-on={f.when !== defaults.when ? "1" : undefined} data-testid={`${testid}-when`}>
         {CALENDAR_WHEN.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
       </select>
       {canTake && (

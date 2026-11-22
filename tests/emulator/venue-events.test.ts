@@ -271,8 +271,8 @@ describe("venueEvents.setTake", () => {
     assert.throws(() => registry["venueEvents.setTake"].input.parse({ eventId: e.id, take: "interested" }));
     assert.throws(() => registry["venueEvents.setTake"].input.parse({ eventId: e.id, take: "pitched" }));
   });
-  test("members cannot set a take (admin-only command)", () => {
-    assert.deepEqual(registry["venueEvents.setTake"].roles, ["admin"]);
+  test("members cannot set a take (admins, Roadie and MCP only)", () => {
+    assert.deepEqual(registry["venueEvents.setTake"].roles, ["admin", "mcp"]);
     assert.ok(registry["venueEvents.refresh"].roles.includes("member"));
   });
 });
@@ -334,8 +334,8 @@ describe("venueEvents.pitch (#79)", () => {
   test("an unknown show is not found; admin only", async () => {
     await assert.rejects(cmd("venueEvents.pitch", { eventId: "nope" }), /not found/i);
     await assert.rejects(cmd("venueEvents.unpitch", { eventId: "nope" }), /not found/i);
-    assert.deepEqual(registry["venueEvents.pitch"].roles, ["admin"]);
-    assert.deepEqual(registry["venueEvents.unpitch"].roles, ["admin"]);
+    assert.deepEqual(registry["venueEvents.pitch"].roles, ["admin", "mcp"]);
+    assert.deepEqual(registry["venueEvents.unpitch"].roles, ["admin", "mcp"]);
   });
 });
 
@@ -362,6 +362,69 @@ describe("On tour (#79)", () => {
     byUrl["https://b.example.com/"] = [{ path: "/9", title: "Someone Else", date: "Thu, Jan 28" }];
     await refresh(b);
     assert.equal((await byTitle(a, "Arlo")).tourStops, undefined);
+  });
+});
+
+describe("venueEvents.find", () => {
+  const seed = async () => {
+    await makeArtist("Nora Quill Band", "nora-quill-band");
+    const v = await makeVenue({ calendar: CAL });
+    rows = [
+      { path: "/e/1", title: "Tin Cup Jane", date: "Fri, Dec 18" },
+      { path: "/e/2", title: "Low Ridge with Marrow Fern", date: "Sat, Nov 14" },
+      { path: "/e/3", title: "Quiet Hours", date: "Sun, Nov 22" },
+      { path: "/e/4", title: "Old Show", date: "Mon, Nov 2" },
+    ];
+    await refresh(v);
+    return { v, e: (t: string) => byTitle(v, t) };
+  };
+  const now = () => ({ ...ctx, now: NOW });
+
+  test("upcoming only, soonest first, with the venue and totals; take, pitched, q, venueId and openerSlot filter", async () => {
+    const { v, e } = await seed();
+    let r = await cmd("venueEvents.find", {}, now());
+    assert.equal(r.count, 3, "the past show is left out");
+    assert.deepEqual(r.rows.map((x: any) => x.title), ["Low Ridge with Marrow Fern", "Quiet Hours", "Tin Cup Jane"]);
+    assert.equal(r.rows[0].venue, "Pine Hollow Lounge");
+    assert.deepEqual(r.totals, { venues: 1, notFit: 0, pitched: 0, openerSlot: r.rows.filter((x: any) => x.openerSlot?.open).length });
+
+    const quiet = await e("Quiet Hours"), tin = await e("Tin Cup Jane");
+    await cmd("venueEvents.setTake", { eventId: quiet.id, take: "notFit", note: "too loud" });
+    await cmd("venueEvents.pitch", { eventId: tin.id });
+    await cmd("venueEvents.setOpenerSlot", { eventId: tin.id, open: true });
+    await cmd("venueEvents.setOpenerSlot", { eventId: quiet.id, open: false });
+
+    r = await cmd("venueEvents.find", {}, now());
+    assert.equal(r.totals.notFit, 1);
+    assert.equal(r.totals.pitched, 1);
+    const q = r.rows.find((x: any) => x.id === quiet.id);
+    assert.equal(q.take, "notFit");
+    assert.equal(q.note, "too loud");
+    assert.ok(r.rows.find((x: any) => x.id === tin.id).pitchId);
+
+    assert.deepEqual((await cmd("venueEvents.find", { take: "pitched" }, now())).rows.map((x: any) => x.id), [tin.id]);
+    assert.deepEqual((await cmd("venueEvents.find", { take: "notFit" }, now())).rows.map((x: any) => x.id), [quiet.id]);
+    assert.deepEqual((await cmd("venueEvents.find", { take: "none" }, now())).rows.map((x: any) => x.title), ["Low Ridge with Marrow Fern"]);
+    assert.deepEqual((await cmd("venueEvents.find", { q: "marrow" }, now())).rows.map((x: any) => x.title), ["Low Ridge with Marrow Fern"]);
+    assert.equal((await cmd("venueEvents.find", { q: "pine hollow" }, now())).count, 3, "q matches the venue's name");
+    assert.equal((await cmd("venueEvents.find", { venueId: "elsewhere" }, now())).count, 0);
+    assert.equal((await cmd("venueEvents.find", { venueId: v }, now())).count, 3);
+    assert.deepEqual((await cmd("venueEvents.find", { openerSlot: true }, now())).rows.map((x: any) => x.id).includes(tin.id), true);
+    assert.equal((await cmd("venueEvents.find", { openerSlot: false }, now())).rows.some((x: any) => x.id === tin.id), false);
+    assert.equal((await cmd("venueEvents.find", { from: "2026-11-01", to: "2026-11-30" }, now())).count, 3, "from reaches back to the past show; to stops before Dec");
+    const lim = await cmd("venueEvents.find", { limit: 1 }, now());
+    assert.equal(lim.count, 3);
+    assert.equal(lim.rows.length, 1);
+  });
+
+  test("another band's takes don't show; roles", async () => {
+    const { e } = await seed();
+    const tin = await e("Tin Cup Jane");
+    await cmd("venueEvents.setTake", { eventId: tin.id, take: "notFit" }, { ...ctx, artistId: "other-artist" });
+    const r = await cmd("venueEvents.find", {}, now());
+    assert.equal(r.totals.notFit, 0);
+    assert.deepEqual(registry["venueEvents.find"].roles, ["admin", "mcp"]);
+    assert.deepEqual(registry["venueEvents.setOpenerSlot"].roles, ["admin", "mcp"]);
   });
 });
 

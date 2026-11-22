@@ -12,7 +12,7 @@ import { useArtist, useZone } from "@/lib/artist";
 import { useCollection, useDoc, useDocs } from "@/lib/firestore-hooks";
 import { Dialog, ErrorBox, useCommand } from "@/components/ui";
 import { CardGroup, DetailCard } from "@/components/booking/DetailCards";
-import { BOOKS_OPENERS_LABEL, CALENDAR_LABEL, booksOpeners, byWhen, calendarHref, eventTime, fmtClock, fmtEventDay, fmtEventYear, genreOptions, isUpcoming, latestFirst, showListed, titleSaysMore, whenFrom, type ShowFilter } from "@/lib/venueEvents";
+import { BOOKS_OPENERS_LABEL, CALENDAR_LABEL, booksOpeners, byWhen, calendarHref, eventTime, fmtClock, fmtEventDay, fmtEventYear, genreOptions, isUpcoming, latestFirst, showListed, titleSaysMore, VENUE_SHOW_FILTER, whenFrom, type ShowFilter } from "@/lib/venueEvents";
 import { ShowFilterBar, useShowFilter } from "@/components/booking/ShowFilters";
 import { CalendarShowsTable } from "@/components/booking/CalendarShowsTable";
 import { isActive } from "@/lib/booking";
@@ -57,7 +57,8 @@ export function VenueEventsTab({ venue, admin, canEditShared = true }: { venue: 
   const actLinks = useMemo(() => new Map(acts.rows.map((a) => [a.id, a.links])), [acts.rows]);
   const actLineups = useMemo(() => new Map(acts.rows.map((a) => [a.id, a as LineupAct])), [acts.rows]);
   const genreChoices = useMemo(() => genreOptions(ours, actGenres.values()), [ours, actGenres]);
-  const [f, setF] = useShowFilter("venueEventsShows", {});
+  // A new key: a filter remembered under the old one was most likely the old "likely" default.
+  const [f, setF] = useShowFilter("venueEventsShows2", {}, VENUE_SHOW_FILTER);
   const change = (patch: Partial<ShowFilter>) => setF({ ...f, ...patch });
   const from = whenFrom(today, f.when);
   const openPitches = new Set((pitches.rows ?? []).filter((p) => isActive(p.status)).map((p) => p.id));
@@ -70,7 +71,7 @@ export function VenueEventsTab({ venue, admin, canEditShared = true }: { venue: 
         <SourceCard venue={venue} cal={cal} health={health} admin={admin} canEdit={canEditShared} onSetup={() => setSetup(true)} />
         {cal?.type !== "manual" && (
           <DetailCard title={`Upcoming shows${events.rows ? ` (${shown.length === upcoming.length ? upcoming.length : `${shown.length} of ${upcoming.length}`})` : ""}`} testid="venue-events-upcoming">
-            {!!upcoming.length && <div className="mb-3"><ShowFilterBar f={f} onChange={change} genres={genreChoices} canTake={admin} testid="venue-events-filter" /></div>}
+            {!!upcoming.length && <div className="mb-3"><ShowFilterBar f={f} onChange={change} genres={genreChoices} canTake={admin} testid="venue-events-filter" defaults={VENUE_SHOW_FILTER} /></div>}
             {!events.rows ? <div className="s">Loading…</div>
               : upcoming.length === 0 ? <div className="empty" data-testid="venue-events-empty">{cal ? "No upcoming shows on the venue's calendar." : "Shows appear here once the venue's calendar is set up."}</div>
               : shown.length === 0 ? <div className="empty" data-testid="venue-events-none">No upcoming shows here match these filters.</div>

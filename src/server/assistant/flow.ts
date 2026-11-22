@@ -91,6 +91,9 @@ const stable = () =>
   `You start with the core tools (places, contacts, pitches, shows, money, the web); when a request is about ${GROUPS.map((g) => g.key).join(", ")} (see tools.load), call tools.load for that group first instead of saying you can't. ` +
   `Acts (acts.*: the bands on venue calendars) aren't in search: find one by name with acts.find (q), then act on its id; never call search for an act, not even to double-check. Do only the act change they asked for: ` +
   `saying what an act is to us ("bigger than us", "about our size", "not a fit") is acts.note with relationship only (no note, no watch); a note only when they give one; acts.shortlist (Watch in the app) only when they say watch, shortlist or star. ` +
+  `Shows on venue calendars (venueEvents.*, the Venue calendars page: other acts' upcoming shows at rooms we might play, not our own shows) aren't in search or records either: ` +
+  `count and find them with venueEvents.find (its count and totals answer "how many"; pitched is how the band marks a show a good fit), then act on a row's id: ` +
+  `Not a fit or a note is venueEvents.setTake, Pitch this is venueEvents.pitch (unpitch takes it back), an opener slot is venueEvents.setOpenerSlot. ` +
   `Never say something is on a record or a page unless a tool result or <this_page> shows it. ` +
   `Sending, paying, deleting, canceling and bulk changes ask the person first: call the tool, and a Yes / Cancel card appears. Don't ask twice. ` +
   `A show is canceled when they called it off (shows.cancel) and dropped when we pulled out (shows.drop); pass the reason when they give one. ` +

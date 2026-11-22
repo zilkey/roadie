@@ -216,15 +216,17 @@ export const SHOW_CHANCE: [ShowChance, string][] = [["likely", "Likely needs an 
  */
 export interface ShowFilter { show: ShowChance; hideNotFit: boolean; hideFlagged: boolean; genres: string[]; when: CalendarWhen }
 export const DEFAULT_SHOW_FILTER: ShowFilter = { show: "likely", hideNotFit: true, hideFlagged: false, genres: [], when: "any" };
-/** A remembered filter, with anything unknown (an older shape) back to the default. */
-export function readShowFilter(v: unknown): ShowFilter {
+/** One venue's own Venue events tab: every show by default (Jeff 2026-11-21: "likely" hid every show at a room that lists one act a night). */
+export const VENUE_SHOW_FILTER: ShowFilter = { ...DEFAULT_SHOW_FILTER, show: "all" };
+/** A remembered filter, with anything unknown (an older shape) back to the default (`base`). */
+export function readShowFilter(v: unknown, base: ShowFilter = DEFAULT_SHOW_FILTER): ShowFilter {
   const o = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
   return {
-    show: SHOW_CHANCE.some(([k]) => k === o.show) ? o.show as ShowChance : DEFAULT_SHOW_FILTER.show,
-    hideNotFit: typeof o.hideNotFit === "boolean" ? o.hideNotFit : DEFAULT_SHOW_FILTER.hideNotFit,
-    hideFlagged: typeof o.hideFlagged === "boolean" ? o.hideFlagged : DEFAULT_SHOW_FILTER.hideFlagged,
+    show: SHOW_CHANCE.some(([k]) => k === o.show) ? o.show as ShowChance : base.show,
+    hideNotFit: typeof o.hideNotFit === "boolean" ? o.hideNotFit : base.hideNotFit,
+    hideFlagged: typeof o.hideFlagged === "boolean" ? o.hideFlagged : base.hideFlagged,
     genres: Array.isArray(o.genres) ? o.genres.filter((g): g is string => typeof g === "string" && !!g) : [],
-    when: CALENDAR_WHEN.some(([k]) => k === o.when) ? o.when as CalendarWhen : DEFAULT_SHOW_FILTER.when,
+    when: CALENDAR_WHEN.some(([k]) => k === o.when) ? o.when as CalendarWhen : base.when,
   };
 }
 

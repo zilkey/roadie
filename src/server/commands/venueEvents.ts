@@ -1,7 +1,8 @@
 /**
  * Venue calendars (issue #60): a venue's calendar setting, refreshing it, setting one up with Gemini's selectors, and the
- * band's take on each show. Roadie (the assistant) gets none of these (policy.ts): refreshing reads strangers' pages, and
- * a calendar setting is set up by hand with its preview.
+ * band's take on each show. Roadie (the assistant) and MCP get finding shows and the band's take on them (find, setTake,
+ * pitch, unpitch, setOpenerSlot), never refresh, preview or setup (policy.ts): refreshing reads strangers' pages, and a
+ * calendar setting is set up by hand with its preview.
  */
 import { spend } from "../usage";
 import { z } from "zod";
@@ -16,6 +17,7 @@ import { lookAtCalendars } from "../prefs";
 import { venueZoneOr, zoneOf } from "../zone";
 import { SHOW_TAKES, VenueCalendar, selectorFields, venueEventNoteId, type Act, type OpenerSlot } from "@/schema";
 import { firestore } from "../admin";
+import { dateInZone } from "@/lib/timezone";
 import { sortedDates } from "@/lib/booking";
 import { fmtEventDay } from "@/lib/venueEvents";
 import { flagPitch } from "./booking";
@@ -25,6 +27,8 @@ import { readCalendar, refreshVenue } from "../events/refresh";
 import { suggestSelectors } from "../events/suggest";
 
 const PREVIEW_ROWS = 40;
+/** The take commands: the app's admins, Roadie and MCP. */
+const TAKE_ROLES = ["admin", "mcp"] as const;
 
 async function venueTz(ctx: Ctx, venueId: string | undefined) {
   if (!venueId) return zoneOf(ctx);
@@ -98,7 +102,7 @@ async function requireEvent(ctx: Ctx, eventId: string) {
 }
 
 export const venueEventsSetTake = defineCommand({
-  name: "venueEvents.setTake", roles: ["admin"],
+  name: "venueEvents.setTake", roles: [...TAKE_ROLES],
   description: "This band's take on one of a venue's shows: notFit (null clears it), and a note. Private to the band. We pitch the venue, not the show: venueEvents.pitch adds the show to the venue's pitch.",
   input: z.strictObject({ eventId: z.string().min(1), take: z.enum(SHOW_TAKES).nullable().optional(), note: z.string().nullable().optional(), pitchId: z.string().nullable().optional() }),
   run: (ctx, { eventId, take, note, pitchId }) => run(ctx, async (w) => {
@@ -111,7 +115,7 @@ export const venueEventsSetTake = defineCommand({
 const showName = (ev: Doc) => (ev.acts as Act[]).find((a) => a.role === "headliner")?.name ?? String(ev.title);
 
 export const venueEventsPitch = defineCommand({
-  name: "venueEvents.pitch", roles: ["admin"],
+  name: "venueEvents.pitch", roles: [...TAKE_ROLES],
   description: "Pitch this: add one of a venue's shows to the venue's pitch. Puts the venue on the Pitch List when it isn't (or uses its open pitch), " +
     "adds the show's date to the pitch's dates, logs it on the pitch's timeline and links the pitch to the show (clearing a Not a fit take). " +
     "campaignId: the booking campaign a new pitch goes in (never moves the venue's existing pitch; pitches.setCampaign does). Returns { pitchId, existing, campaignId } (the pitch's campaign).",
@@ -133,7 +137,7 @@ export const venueEventsPitch = defineCommand({
 });
 
 export const venueEventsUnpitch = defineCommand({
-  name: "venueEvents.unpitch", roles: ["admin"],
+  name: "venueEvents.unpitch", roles: [...TAKE_ROLES],
   description: "Take one of a venue's shows off the venue's pitch: unlinks it, takes its date off the pitch's dates (unless another show on the pitch is that day) and logs it. The pitch stays on the Pitch List (pitches.remove takes it off).",
   input: z.strictObject({ eventId: z.string().min(1) }),
   run: (ctx, { eventId }) => run(ctx, async (w) => {
@@ -158,7 +162,7 @@ export const venueEventsUnpitch = defineCommand({
 });
 
 export const venueEventsSetOpenerSlot = defineCommand({
-  name: "venueEvents.setOpenerSlot", roles: ["admin"],
+  name: "venueEvents.setOpenerSlot", roles: [...TAKE_ROLES],
   description: "Say whether one of a venue's shows has an opener slot to pitch (the badge's x is false, \"+ Opener slot\" is true). " +
     "Shared: every band sees the show's badge. A refresh never changes what a person set.",
   input: z.strictObject({ eventId: z.string().min(1), open: z.boolean() }),
@@ -171,6 +175,71 @@ export const venueEventsSetOpenerSlot = defineCommand({
   },
 });
 
+const TAKE_FILTERS = ["notFit", "pitched", "none"] as const;
+
+export const venueEventsFind = defineCommand({
+  name: "venueEvents.find", roles: [...TAKE_ROLES],
+  description:
+    "Find shows on venue calendars: the upcoming shows each venue's own calendar lists (the app's Booking > Venue calendars), shared by every band. " +
+    "These are other acts' shows at rooms we might play, not our shows (shows.list). Upcoming only (today on) unless from is earlier. " +
+    "Filters: venueId, q (matches the title, an act or the venue's name), from/to (YYYY-MM-DD), take (notFit = we marked it Not a fit; pitched = we pitched the venue for it, " +
+    "with Pitch this: that is how the band says a show is a good fit; none = neither), openerSlot (true = marked as having an opener slot to pitch). " +
+    "Returns count (every match), totals over the matches (venues, notFit, pitched, openerSlot), and rows soonest first: id (the eventId the other venueEvents commands take), " +
+    "venueId, venue, date, start, doors, title, acts (name, role headliner/support), openerSlot (open, by guess or person), status, ticketUrl, and this band's take, note and pitchId. " +
+    "Act names come from the venue's own listing and may carry tour names or extra words.",
+  input: z.strictObject({
+    venueId: z.string().min(1).optional(), q: z.string().min(1).optional(),
+    from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    take: z.enum(TAKE_FILTERS).optional(), openerSlot: z.boolean().optional(),
+    limit: z.number().int().min(0).max(1000).default(25),
+  }),
+  async run(ctx, i) {
+    const from = i.from ?? dateInZone(await zoneOf(ctx), ctx.now ?? new Date());
+    const [events, venues, notes] = await Promise.all([
+      db.list(ctx, "venueEvents", (q) => q.where("date", ">=", from)),
+      db.list(ctx, "venues"),
+      db.list(ctx, "venueEventNotes"),
+    ]);
+    const venueName = new Map(venues.map((v) => [v.id, String(v.name)]));
+    const noteOf = new Map(notes.filter((n) => !n.deletedAt).map((n) => [String(n.eventId), n]));
+    const q = i.q?.toLowerCase();
+    const rows = events.filter((e) => {
+      if (e.status === "gone" || (i.to && String(e.date) > i.to) || (i.venueId && e.venueId !== i.venueId)) return false;
+      const n = noteOf.get(e.id);
+      if (i.take === "notFit" && n?.take !== "notFit") return false;
+      if (i.take === "pitched" && !n?.pitchId) return false;
+      if (i.take === "none" && (n?.take === "notFit" || n?.pitchId)) return false;
+      if (i.openerSlot !== undefined && !!(e.openerSlot as OpenerSlot | undefined)?.open !== i.openerSlot) return false;
+      if (q) {
+        const hay = [e.title, venueName.get(String(e.venueId)), ...(e.acts as Act[]).map((a) => a.name)].join("\n").toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    }).sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.start ?? "").localeCompare(String(b.start ?? "")));
+    const takeOf = (id: string) => noteOf.get(id);
+    return {
+      count: rows.length,
+      totals: {
+        venues: new Set(rows.map((e) => e.venueId)).size,
+        notFit: rows.filter((e) => takeOf(e.id)?.take === "notFit").length,
+        pitched: rows.filter((e) => takeOf(e.id)?.pitchId).length,
+        openerSlot: rows.filter((e) => (e.openerSlot as OpenerSlot | undefined)?.open).length,
+      },
+      rows: rows.slice(0, i.limit).map((e) => {
+        const n = takeOf(e.id);
+        return {
+          id: e.id, venueId: e.venueId, venue: venueName.get(String(e.venueId)) ?? null, date: e.date,
+          ...(e.start ? { start: e.start } : {}), ...(e.doors ? { doors: e.doors } : {}),
+          title: e.title, acts: (e.acts as Act[]).map((a) => ({ name: a.name, role: a.role })),
+          ...(e.openerSlot ? { openerSlot: { open: (e.openerSlot as OpenerSlot).open, by: (e.openerSlot as OpenerSlot).by } } : {}),
+          status: e.status, ...(e.ticketUrl ? { ticketUrl: e.ticketUrl } : {}),
+          ...(n?.take === "notFit" ? { take: "notFit" } : {}), ...(n?.note ? { note: n.note } : {}), ...(n?.pitchId ? { pitchId: n.pitchId } : {}),
+        };
+      }),
+    };
+  },
+});
+
 export const venueEventsLooked = defineCommand({
   name: "venueEvents.looked", roles: ["admin", "member"], input: z.strictObject({}),
   description: "Remember that the caller just opened Booking's Venue calendars; returns when they last looked before (null the first time), for its New chips. Personal: nobody else's chips change.",
@@ -179,4 +248,4 @@ export const venueEventsLooked = defineCommand({
   },
 });
 
-export const venueEventCommands = [venueEventsLooked, venuesSetCalendar, venueEventsRefresh, venueEventsPreview, venueEventsSuggest, venueEventsSetTake, venueEventsSetOpenerSlot, venueEventsPitch, venueEventsUnpitch];
+export const venueEventCommands = [venueEventsFind, venueEventsLooked, venuesSetCalendar, venueEventsRefresh, venueEventsPreview, venueEventsSuggest, venueEventsSetTake, venueEventsSetOpenerSlot, venueEventsPitch, venueEventsUnpitch];
