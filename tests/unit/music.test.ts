@@ -1,7 +1,7 @@
 // Music helpers: file kinds and keys, lengths, setlist totals and transitions, tempo strip, player choice, file groups (no emulator).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bpmStrip, driveIdFromUrl, guessKey, guessKind, fileGroup, lastRehearsed, move, parseLen, fmtLen, playerFor, playsInline, fmtTransition, setlistSlack, setlistTotal, transitionCount, transitionOf } from "@/lib/music";
+import { bpmStrip, driveIdFromUrl, guessKey, guessKind, fileGroup, lastRehearsed, move, parseLen, fmtLen, playerFor, embedFor, linkName, playsInline, fmtTransition, setlistSlack, setlistTotal, transitionCount, transitionOf } from "@/lib/music";
 
 test("pure helpers: kinds, keys, lengths, player choice, last rehearsed", () => {
   assert.equal(guessKind("Glass Coast chart F#m.docx"), "chart");
@@ -71,4 +71,22 @@ test("driveIdFromUrl: file and doc links give the id; folders, other sites and p
   assert.equal(driveIdFromUrl("https://drive.google.com/drive/folders/1AbC_def-GHIjkl"), null);
   assert.equal(driveIdFromUrl("https://example.com/d/1AbC_def-GHIjkl"), null);
   assert.equal(driveIdFromUrl("Wild Mother"), null);
+});
+
+test("Spotify, YouTube and SoundCloud links play in their own embedded player; a pasted link names itself", () => {
+  assert.deepEqual(embedFor("https://open.spotify.com/track/4Ms3eLhfUUCSe8mD0zlISV?si=x"), { src: "https://open.spotify.com/embed/track/4Ms3eLhfUUCSe8mD0zlISV" });
+  assert.deepEqual(embedFor("https://open.spotify.com/intl-de/album/abc123"), { src: "https://open.spotify.com/embed/album/abc123" });
+  assert.deepEqual(embedFor("https://www.youtube.com/watch?v=VPu1oNitu2w&t=3"), { src: "https://www.youtube.com/embed/VPu1oNitu2w", wide: true });
+  assert.deepEqual(embedFor("https://youtu.be/VPu1oNitu2w"), { src: "https://www.youtube.com/embed/VPu1oNitu2w", wide: true });
+  assert.deepEqual(embedFor("https://www.youtube.com/shorts/VPu1oNitu2w"), { src: "https://www.youtube.com/embed/VPu1oNitu2w", wide: true });
+  assert.equal(embedFor("https://soundcloud.com/ingrid-avison/the-villain")?.src, `https://w.soundcloud.com/player/?url=${encodeURIComponent("https://soundcloud.com/ingrid-avison/the-villain")}&visual=false`);
+  assert.equal(embedFor("https://soundcloud.com/ingrid-avison"), null); // a profile, not a track
+  assert.equal(embedFor("https://www.youtube.com/channel/UCabc"), null);
+  assert.equal(embedFor("https://example.com/song"), null);
+  assert.equal(playerFor({ url: "https://youtu.be/VPu1oNitu2w" }).mode, "embed");
+  assert.equal(linkName("https://open.spotify.com/track/x"), "Spotify");
+  assert.equal(linkName("https://youtu.be/x"), "YouTube");
+  assert.equal(linkName("https://soundcloud.com/a/b"), "SoundCloud");
+  assert.equal(linkName("https://band.bandcamp.com/track/x"), "Bandcamp");
+  assert.equal(linkName("https://www.example.com/x"), "example.com");
 });

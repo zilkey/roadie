@@ -141,11 +141,37 @@ export function move<T>(list: T[], from: number, to: number): T[] {
   return out;
 }
 
+/** The embeddable player for a Spotify, YouTube or SoundCloud link (wide: a 16:9 video), or null for anything else. */
+export function embedFor(url: string): { src: string; wide?: boolean } | null {
+  let u: URL;
+  try { u = new URL(url); } catch { return null; }
+  const h = u.hostname.toLowerCase().replace(/^(www|m|music)\./, "");
+  const sp = /^\/(?:intl-[\w-]+\/)?(track|album|playlist|episode|artist)\/([A-Za-z0-9]+)/.exec(u.pathname);
+  if (h === "open.spotify.com" && sp) return { src: `https://open.spotify.com/embed/${sp[1]}/${sp[2]}` };
+  const yt = h === "youtu.be" ? u.pathname.slice(1).split("/")[0]
+    : h === "youtube.com" ? (u.searchParams.get("v") ?? /^\/(?:shorts|embed|live)\/([\w-]+)/.exec(u.pathname)?.[1]) : null;
+  if (yt && /^[\w-]{6,}$/.test(yt)) return { src: `https://www.youtube.com/embed/${yt}`, wide: true };
+  if (h === "soundcloud.com" && u.pathname.split("/").filter(Boolean).length >= 2) return { src: `https://w.soundcloud.com/player/?url=${encodeURIComponent(url)}&visual=false` };
+  return null;
+}
+
+/** A pasted link's default name: the service ("Spotify", "SoundCloud"), else the site's own host. */
+export function linkName(url: string): string {
+  const p = providerFor(url);
+  if (p !== "web") return PROVIDER_LABEL[p];
+  let h = url;
+  try { h = new URL(url).hostname.toLowerCase().replace(/^www\./, ""); } catch { return url; }
+  const known: Record<string, string> = { "soundcloud.com": "SoundCloud", "bandcamp.com": "Bandcamp", "music.apple.com": "Apple Music", "instagram.com": "Instagram", "tiktok.com": "TikTok", "vimeo.com": "Vimeo" };
+  return known[h] ?? (h.endsWith(".bandcamp.com") ? "Bandcamp" : h);
+}
+
 /**
- * How to show a file. A direct media URL (by extension) plays in an audio/video tag; a Drive "view" link
- * plays in Drive's embedded preview; anything else just opens the link.
+ * How to show a file. A Spotify, YouTube or SoundCloud link plays in that service's embedded player; a direct media URL
+ * (by extension) plays in an audio/video tag; a Drive "view" link plays in Drive's embedded preview; anything else just opens the link.
  */
-export function playerFor(f: { url: string; mimeType?: string }): { mode: "audio" | "video" | "embed" | "link"; src: string } {
+export function playerFor(f: { url: string; mimeType?: string; driveFileId?: string }): { mode: "audio" | "video" | "embed" | "link"; src: string; wide?: boolean } {
+  const e = f.driveFileId ? null : embedFor(f.url);
+  if (e) return { mode: "embed", ...e };
   const g = mimeGroup(f.mimeType);
   if (g !== "audio" && g !== "video") return { mode: "link", src: f.url };
   let u: URL | null = null;

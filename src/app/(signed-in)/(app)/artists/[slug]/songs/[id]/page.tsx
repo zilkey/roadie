@@ -13,7 +13,7 @@ import { useAutosave } from "@/lib/autosave";
 import { Dialog, ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { useProfile } from "@/lib/auth";
 import { todayStr } from "@/lib/booking";
-import { daysAgoLabel, fmtLen, refsLabel, songRefs, STATUS_LABEL, KIND_LABEL, KIND_ORDER, lastRehearsed, parseLen, playerFor, playsInline, PROVIDER_LABEL, providerFor, STATUS_ORDER, type FileKind, type SongStatus } from "@/lib/music";
+import { daysAgoLabel, driveIdFromUrl, fmtLen, linkName, refsLabel, songRefs, STATUS_LABEL, KIND_LABEL, KIND_ORDER, lastRehearsed, parseLen, playerFor, playsInline, PROVIDER_LABEL, providerFor, STATUS_ORDER, type FileKind, type SongStatus } from "@/lib/music";
 import { FileIcon, Missing, fmtDay, useMusic, type FileRow, type SongRow } from "@/components/music/common";
 import { DrivePicker, NoBandFolder, NoChartsFolder, type Pick } from "@/components/music/DrivePicker";
 import { Upload } from "@/components/music/Upload";
@@ -43,7 +43,8 @@ function Player({ file }: { file: FileRow }) {
   if (playsInline(file)) return <AudioPanel file={file} />;
   const pl = playerFor(file);
   if (pl.mode === "video") return <video controls preload="none" src={pl.src} className="w-full rounded-lg" data-testid="player-video" />;
-  if (pl.mode === "embed") return <iframe src={pl.src} title={file.title} allow="autoplay" className="h-24 w-full rounded-lg border-0" data-testid="player-embed" />;
+  if (pl.mode === "embed") return <iframe src={pl.src} title={file.title} allow="autoplay; encrypted-media; clipboard-write; picture-in-picture; fullscreen" allowFullScreen loading="lazy"
+    className={`w-full rounded-lg border-0 ${pl.wide ? "aspect-video" : "h-[152px]"}`} data-testid="player-embed" />;
   return null;
 }
 
@@ -88,7 +89,7 @@ function FileLine({ file, m, admin }: { file: FileRow; m: ReturnType<typeof useM
             : inline && <button className="btn ghost sm" onClick={() => setOpen(!open)} aria-expanded={open} data-testid="file-play">{open ? "Hide" : "Play"}</button>}
           {/* The kind is guessed from the name when a file is added; an admin can correct it here (a Google Doc reads
               inline at the bottom only as Lyrics or Charts). */}
-          {admin && (
+          {admin && isDrive && (
             <select className="select !w-auto" aria-label={`Kind of ${file.title}`} value={file.kind} disabled={busy} data-testid="file-kind"
               onChange={(e) => call("files.update", { id: file.id, patch: { kind: e.target.value as FileKind } })}>
               {(KIND_ORDER.includes(file.kind) ? KIND_ORDER : [...KIND_ORDER, file.kind]).map((k) => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
@@ -153,7 +154,10 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
   const [adding, setAdding] = useState(false);
   const [picks, setPicks] = useState<Pick[]>([]);
   const [checkMsg, setCheckMsg] = useState("");
-  const files = m.files.filter((f) => f.songId === song.id);
+  // Drive files are the charts and recordings; a Spotify, YouTube or web link has no driveFileId and lists under Links.
+  const all = m.files.filter((f) => f.songId === song.id);
+  const files = all.filter((f) => f.driveFileId);
+  const links = all.filter((f) => !f.driveFileId).sort((a, b) => a.title.localeCompare(b.title));
   const last = lastRehearsed(m.rehearsals)[song.id];
   const zone = useZone();
   const today = todayStr(zone);
@@ -298,6 +302,8 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
         })}
       </section>
 
+      {(admin || links.length > 0) && <SongLinks songId={song.id} links={links} m={m} admin={admin} />}
+
       {/* Each attached Google Doc (lyrics, then charts) read inline, at the bottom of the page. Word and PDF files stay links above. */}
       {googleDocsOf(files, song.id).map((f) => (
         <section key={f.id} className="sg-sec" aria-labelledby={`doc-${f.id}-h`} data-testid="doc-card">
@@ -307,6 +313,52 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
       ))}
       <ErrorBox error={error} />
     </div>
+  );
+}
+
+/**
+ * The song's links: Spotify, YouTube or any web page, pasted in by an admin. YouTube and Spotify play on the page; every
+ * link opens in a new tab. A pasted Drive link is attached as the Drive file it is, so it lands in Charts & recordings.
+ */
+function SongLinks({ songId, links, m, admin }: { songId: string; links: FileRow[]; m: ReturnType<typeof useMusic>; admin: boolean }) {
+  const { call, error, busy } = useCommand();
+  const [adding, setAdding] = useState(false);
+  const [url, setUrl] = useState("");
+  const [title, setTitle] = useState("");
+  const [msg, setMsg] = useState("");
+  const close = () => { setAdding(false); setUrl(""); setTitle(""); };
+  async function add(e: React.FormEvent) {
+    e.preventDefault();
+    let u = url.trim();
+    if (!/^https?:\/\//i.test(u)) u = `https://${u}`;
+    const driveFileId = driveIdFromUrl(u);
+    // A blank name reads as where the link goes: "Spotify", "YouTube", "SoundCloud", or the site's own host.
+    const name = title.trim() || linkName(u);
+    const r = await call<{ ids: string[]; skipped: number }>("files.attach", { songId, files: [driveFileId ? { driveFileId, ...(title.trim() ? { title: title.trim() } : {}) } : { url: u, title: name }] });
+    if (!r) return;
+    setMsg(r.skipped ? "That link is already on this song." : driveFileId ? "That's a Drive file: it's under Charts & recordings." : "");
+    close();
+  }
+  const valid = (() => { try { const u = new URL(/^https?:\/\//i.test(url.trim()) ? url.trim() : `https://${url.trim()}`); return u.hostname.includes("."); } catch { return false; } })();
+  return (
+    <section className="sg-sec" aria-labelledby="song-links-h" data-testid="song-links">
+      <div className="sg-sech">
+        <h2 id="song-links-h" className="sg-lbl">Links</h2>
+        {admin && <button className="btn acc" onClick={() => (adding ? close() : setAdding(true))} data-testid="add-link">{adding ? "Cancel" : "+ Add link"}</button>}
+      </div>
+      {adding && (
+        <form className="card grid gap-2" onSubmit={add} data-testid="add-link-form">
+          <input className="input" inputMode="url" autoFocus placeholder="Paste a Spotify, YouTube or web link" aria-label="Link" value={url} onChange={(e) => setUrl(e.target.value)} data-testid="link-url" />
+          <input className="input" placeholder="Name (optional)" aria-label="Name" value={title} onChange={(e) => setTitle(e.target.value)} data-testid="link-title" />
+          <div><button className="btn acc" type="submit" disabled={busy || !valid} data-testid="link-save">Add</button></div>
+        </form>
+      )}
+      {msg && <span className="s" data-testid="link-msg">{msg}</span>}
+      {links.length === 0
+        ? <div className="empty" data-testid="no-links"><span>No links yet.</span></div>
+        : <div className="sg-files" data-testid="links-list">{links.map((f) => <FileLine key={f.id} file={f} m={m} admin={admin} />)}</div>}
+      <ErrorBox error={error} />
+    </section>
   );
 }
 

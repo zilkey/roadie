@@ -403,3 +403,45 @@ test("a new song is a draft; an existing song autosaves with Undo", async ({ pag
   await page.getByTestId("undo-button").last().click(); // saves by the same person within 2 minutes fold into one history entry
   await expect(page.getByTestId("field-length")).not.toHaveText("4:00");
 });
+
+test("a song's Links: paste Spotify, YouTube and web links, play them on the page, remove one", async ({ page }) => {
+  await signInAs(page, "rudy");
+  await newSong(page, "Linkwork");
+  await page.getByTestId("save-song").click();
+  await expect(page.getByTestId("song-page")).toBeVisible();
+  const links = page.getByTestId("song-links");
+  await expect(links.getByTestId("no-links")).toBeVisible();
+  // a blank name reads as where the link goes
+  await links.getByTestId("add-link").click();
+  await links.getByTestId("link-url").fill("https://open.spotify.com/track/linkwork");
+  await links.getByTestId("link-save").click();
+  await expect(links.getByTestId("add-link-form")).toBeHidden();
+  await expect(links.getByTestId("links-list").getByTestId("file-label")).toHaveText(["Spotify"]);
+  await links.getByTestId("add-link").click();
+  await links.getByTestId("link-url").fill("https://www.youtube.com/watch?v=linkwork01");
+  await links.getByTestId("link-title").fill("Live at the Deep End");
+  await links.getByTestId("link-save").click();
+  await expect(links.getByTestId("add-link-form")).toBeHidden();
+  // no scheme is fine; any other page is named by its site
+  await links.getByTestId("add-link").click();
+  await links.getByTestId("link-url").fill("soundcloud.com/band/linkwork");
+  await links.getByTestId("link-save").click();
+  await expect(links.getByTestId("add-link-form")).toBeHidden();
+  await expect(links.getByTestId("file-label")).toHaveText(["Live at the Deep End", "SoundCloud", "Spotify"]);
+  // links never land in Charts & recordings, and have no kind to pick
+  await expect(page.getByTestId("no-files")).toBeVisible();
+  await expect(links.getByTestId("file-kind")).toHaveCount(0);
+  // YouTube plays on the page
+  const yt = links.locator(".sg-row").filter({ hasText: "Live at the Deep End" });
+  await yt.getByTestId("file-play").click();
+  await expect(yt.getByTestId("player-embed")).toBeVisible();
+  // the same link twice is skipped, and says so
+  await links.getByTestId("add-link").click();
+  await links.getByTestId("link-url").fill("https://open.spotify.com/track/linkwork");
+  await links.getByTestId("link-save").click();
+  await expect(links.getByTestId("add-link-form")).toBeHidden();
+  await expect(links.getByTestId("link-msg")).toHaveText("That link is already on this song.");
+  page.once("dialog", (d) => d.accept());
+  await links.locator(".sg-row").filter({ hasText: "SoundCloud" }).getByTestId("file-remove").click();
+  await expect(links.getByTestId("file-label")).toHaveText(["Live at the Deep End", "Spotify"]);
+});
