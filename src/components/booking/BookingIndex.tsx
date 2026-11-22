@@ -1,7 +1,7 @@
 "use client";
 import { draftPath } from "@/schema/drafts";
 import Link, { useArtist, useArtistRouter as useRouter, useZone } from "@/lib/artist";
-import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import { AdminOnly } from "@/components/Guard";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
@@ -31,6 +31,7 @@ import { homeOf, inCampaign, liveCampaigns, ONGOING, statusCounts, type Campaign
 import { InlineValue } from "@/components/InlineValue";
 import { MoveToCampaignDialog } from "@/components/booking/MoveToCampaign";
 import { FlagCampaignSelect, campaignArg, useFlagCampaign } from "@/components/booking/FlagCampaign";
+import { gmailDraftLink } from "@/lib/email-compose";
 import { groupByPromoter, type Grouped } from "@/lib/promoterGroups";
 import { emailCells, type ThreadLike } from "@/lib/emailCells";
 import { queueHref, type QueueItem } from "@/lib/emailQueue";
@@ -400,6 +401,15 @@ export function BookingTable({ seg, rows, onFlag, sort = "name", onSort, q = "",
   // In-place edits on a campaign page: status, lineup, next step; Write follow-up opens a modal (#82, Jeff 2026-11-12).
   const { call: edit, error: editError } = useCommand();
   const { call: callOpen, error: openError, busy: opening } = useCommand();
+  // A campaign page asks Gmail once about the drafts its pitches keep (sent since with Schedule send?): email.checkDrafts logs those.
+  const draftIds = seg === "pitches" ? rows.flatMap((r) => (r.pitch?.gmailDrafts?.length ? [r.pitch.id] : [])).slice(0, 100) : [];
+  const draftsChecked = useRef(false);
+  const { call: checkDrafts } = useCommand(); // quiet: a Gmail hiccup here isn't worth a red box on the page
+  useEffect(() => {
+    if (draftsChecked.current || !draftIds.length) return;
+    draftsChecked.current = true;
+    void checkDrafts("email.checkDrafts", { pitchIds: draftIds });
+  }, [draftIds.length]); // eslint-disable-line react-hooks/exhaustive-deps
   const [followUp, setFollowUp] = useState<{ pitch: PitchRow; threadId?: string } | null>(null);
   const move = (pitchId: string, into: CampaignKey) => callMove("pitches.setCampaign", { ids: [pitchId], campaignId: into === ONGOING ? null : into });
   const flagged = seg !== "contacts";
@@ -503,12 +513,16 @@ export function BookingTable({ seg, rows, onFlag, sort = "name", onSort, q = "",
     // A venue under a promoter whose one email covers the whole group: the group row shows it once (#82 S8b).
     if (same) return [<td key="in" className="nw"><span className="sub italic">Same email</span></td>, <td key="fu" className="nw"><span className="sub italic">Same email</span></td>, status];
     const threadLink = (id: string, subject: string, testid: string) => <Link href={`/booking/email/${id}`} className="sub block max-w-[220px] truncate" data-testid={testid}>{subject || "(no subject)"}</Link>;
+    // Saved as a Gmail draft and not sent yet (to send later with Schedule send): shown where that email will land.
+    const d = p?.gmailDrafts?.[0];
+    const pending = d && <a href={gmailDraftLink(d)} target="_blank" rel="noreferrer" className={d.scheduled ? "chip a" : "chip"} title={`${d.subject} · open it in Gmail`} data-testid={`gmail-draft-${r.id}`}>{d.scheduled ? "Scheduled in Gmail" : "Draft in Gmail"}</a>;
     return [
       <td key="in" className="nw" data-testid={`initial-email-${r.id}`}>{c?.initial
         ? <><b>{fmtDate(c.initial.date)}</b>{threadLink(c.initial.threadId, c.initial.subject, `initial-thread-${r.id}`)}</>
+        : pending ? pending
         : p && (p.status === "toPitch" || p.status === "idea") ? <Link href={`/booking/email/new?pitch=${p.id}`} className="font-semibold" data-testid={`write-initial-${r.id}`}>Write it</Link>
         : p && isActive(p.status) ? <span className="sub" title="Sent before Roadie, or from Gmail without linking it">Not in Roadie</span> : <Dash />}</td>,
-      <td key="fu" className="nw" data-testid={`follow-up-${r.id}`}>{!f ? <Dash />
+      <td key="fu" className="nw" data-testid={`follow-up-${r.id}`}>{c?.initial && pending ? pending : !f ? <Dash />
         : f.kind === "sent" ? <><b>{fmtDate(f.date)}</b>{f.newThread && <> <span className="chip" title="Sent as a new email, not a reply in the first thread">new thread</span></>}{f.more > 0 && <span className="s"> +{f.more}</span>}{threadLink(f.threadId, f.subject, `follow-up-thread-${r.id}`)}</>
         : f.kind === "replied" ? <span className="sub">Not needed: replied {fmtDate(f.date)}</span>
         : <><span className="chip y" data-testid={`follow-up-due-${r.id}`}>{f.due ? `Due ${fmtDate(p!.nextStep!.due!)}` : `${f.days} days quiet`}</span>

@@ -30,3 +30,10 @@ export function parseTarget(v: string | null): { kind: "venue" | "promoter" | "f
   const m = /^(venue|promoter|festival|edition|act):(.+)$/.exec(v ?? "");
   return m ? { kind: m[1] as "venue", id: m[2] } : null;
 }
+
+/**
+ * Gmail's web link to a draft Roadie saved: it opens in Gmail's compose window, where Schedule send is; `authuser` picks the
+ * mailbox. Once scheduled it has left Drafts, so the link goes to Gmail's Scheduled folder instead.
+ */
+export const gmailDraftLink = (d: { account: string; messageId: string; scheduled?: boolean }) =>
+  `https://mail.google.com/mail/?authuser=${encodeURIComponent(d.account)}#${d.scheduled ? "scheduled" : `drafts?compose=${encodeURIComponent(d.messageId)}`}`;

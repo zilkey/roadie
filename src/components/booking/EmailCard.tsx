@@ -6,6 +6,7 @@ import { ErrorBox, useCommand } from "@/components/ui";
 import { useBooking } from "@/components/booking/common";
 import { AUTO_CHECK_MS, agoText } from "@/lib/email-text";
 import { hasNewReply, type EmailThread } from "@/schema";
+import { gmailDraftLink } from "@/lib/email-compose";
 
 type Stamp = { toMillis(): number };
 const ms = (t?: unknown) => (t as Stamp | undefined)?.toMillis?.() ?? 0;
@@ -16,7 +17,8 @@ const short = (iso: string, zone: string) => new Date(iso).toLocaleDateString("e
 /**
  * The Email card on a pitch: the Gmail threads of the pitch's place (venue, promoter or festival), newest first. Threads
  * belong to the place, so they stay when the pitch closes; one taken off this pitch (a bounce) is left out. New email opens the
- * compose page for this pitch.
+ * compose page for this pitch. Emails saved as Gmail drafts and not sent yet are listed above the threads, each with Open in Gmail
+ * (Schedule send is there); opening the pitch asks Gmail about them once (email.checkDrafts), so one Gmail sent shows as sent.
  */
 export function EmailCard({ target, pitchId }: { target: { kind: "venue" | "promoter" | "edition"; id: string }; pitchId: string }) {
   const { artistId, timeZone: zone } = useArtist();
@@ -42,6 +44,16 @@ export function EmailCard({ target, pitchId }: { target: { kind: "venue" | "prom
     if (r && !quiet) setResult(r.added ? `${r.added} new repl${r.added === 1 ? "y" : "ies"}` : "No new replies");
   }
 
+  const drafts = b.pitches.find((p) => p.id === pitchId)?.gmailDrafts ?? [];
+  // On opening the pitch: any Gmail drafts kept on it, sent since? Once, no polling.
+  const draftsChecked = useRef(false);
+  const { call: checkDrafts } = useCommand(); // quiet, like the reply check
+  useEffect(() => {
+    if (draftsChecked.current || !drafts.length) return;
+    draftsChecked.current = true;
+    void checkDrafts("email.checkDrafts", { pitchIds: [pitchId] });
+  }, [drafts.length, pitchId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // On opening the pitch: read the threads again if they were last read a while ago. Once, no polling.
   const auto = useRef(false);
   useEffect(() => {
@@ -62,7 +74,18 @@ export function EmailCard({ target, pitchId }: { target: { kind: "venue" | "prom
         </div>
       </div>
       <ErrorBox error={error} />
-      {rows !== null && threads.length === 0 && <div className="empty" data-testid="email-empty"><span>No threads yet. Send one from here, or link one from Gmail.</span></div>}
+      {drafts.length > 0 && (
+        <div className="grid gap-1" data-testid="email-drafts">
+          {drafts.map((d) => (
+            <div key={d.draftId} className="flex flex-wrap items-center gap-2 rounded-xl border border-dashed p-3" style={{ borderColor: "var(--line)" }} data-testid={`email-draft-${d.draftId}`}>
+              <span className={d.scheduled ? "chip a" : "chip"} data-testid={`email-draft-state-${d.draftId}`}>{d.scheduled ? "Scheduled in Gmail" : "Draft in Gmail"}</span>
+              <span className="grid min-w-0 flex-1"><b className="truncate">{d.subject || "(no subject)"}</b><span className="s truncate">To {d.to}</span></span>
+              <a href={gmailDraftLink(d)} target="_blank" rel="noreferrer" className="btn sm" data-testid={`email-draft-open-${d.draftId}`}>Open in Gmail</a>
+            </div>
+          ))}
+        </div>
+      )}
+      {rows !== null && threads.length === 0 && drafts.length === 0 && <div className="empty" data-testid="email-empty"><span>No threads yet. Send one from here, or link one from Gmail.</span></div>}
       {threads.length > 0 && (
         <div className="grid gap-1" data-testid="email-threads">
           {threads.map((t) => {

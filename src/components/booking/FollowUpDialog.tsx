@@ -14,7 +14,8 @@ import { email as emailSchema, type EmailThread } from "@/schema";
  * "Write follow-up" on a campaign page (#82, Jeff 2026-11-12): a small composer in a modal, so the table stays put. It replies in
  * the pitch's first thread when Roadie has one (To: whoever wrote last, Subject: Re: …), else starts a new email to the place's
  * first contact. Plain text plus the Gmail signature; "Open the full editor" goes to the compose page (templates, formatting, Cc).
- * testids: follow-up-dialog, follow-up-to, follow-up-subject, follow-up-body, follow-up-send, follow-up-full.
+ * "Save draft in Gmail" saves it there instead, to send later with Gmail's Schedule send; the pitch logs it once Gmail sends it.
+ * testids: follow-up-dialog, follow-up-to, follow-up-subject, follow-up-body, follow-up-send, follow-up-draft, follow-up-drafted, follow-up-full.
  */
 export function FollowUpDialog({ pitch, threadId, onClose }: { pitch: PitchRow | null; threadId?: string; onClose(): void }) {
   return (
@@ -48,14 +49,36 @@ function Form({ pitch, threadId, onClose }: { pitch: PitchRow; threadId?: string
   const ready = !loading && toList.length > 0 && !bad && !!subj.trim() && !!body.trim();
   const full = `/booking/email/new?${threadId ? `thread=${encodeURIComponent(threadId)}&` : ""}pitch=${pitch.id}`;
 
-  async function send() {
+  const mail = () => {
     const sig = signature.signatureHtml;
-    const r = await call("email.send", {
+    return {
       target: { kind: pitch.target.kind, id: pitch.target.id }, pitchId: pitch.id, ...(thread ? { threadId: thread.threadId } : {}),
       to: toList, subject: subj.trim(), body: body.trim(), html: textToHtml(body.trim()) + (sig ? `<br>${sig}` : ""),
-    }, { clientMutationId: sendId.current });
+    };
+  };
+  async function send() {
+    const r = await call("email.send", mail(), { clientMutationId: sendId.current });
     if (r) onClose();
   }
+  /** Saved as a Gmail draft: its link there ("" when Gmail gave none). */
+  const [drafted, setDrafted] = useState<string | null>(null);
+  async function saveDraft() {
+    const r = await call<{ gmailUrl?: string }>("email.draft", mail());
+    if (r) setDrafted(r.gmailUrl ?? "");
+  }
+  if (drafted !== null) return (
+    <>
+      <DialogClose onClose={onClose} testid="follow-up-close" />
+      <div className="grid gap-2" data-testid="follow-up-drafted">
+        <b>Draft saved in Gmail.</b>
+        <span className="s">To send it later, open it in Gmail and use Schedule send. Roadie logs it on the pitch once Gmail sends it.</span>
+        <span className="flex flex-wrap gap-2">
+          {drafted && <a href={drafted} target="_blank" rel="noreferrer" className="btn acc" data-testid="follow-up-drafted-open">Open in Gmail</a>}
+          <button type="button" className="btn" onClick={onClose}>Done</button>
+        </span>
+      </div>
+    </>
+  );
 
   return (
     <>
@@ -74,6 +97,7 @@ function Form({ pitch, threadId, onClose }: { pitch: PitchRow; threadId?: string
         <Link href={full} className="link text-sm font-semibold" data-testid="follow-up-full">Open the full editor</Link>
         <span className="flex gap-2">
           <button type="button" className="btn" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn ghost" disabled={!ready || busy} onClick={() => void saveDraft()} data-testid="follow-up-draft" title="Save it in Gmail's Drafts, to send from there or schedule with Schedule send">Save draft in Gmail</button>
           <button type="button" className="btn acc" disabled={!ready || busy} onClick={() => void send()} data-testid="follow-up-send">Send</button>
         </span>
       </div>

@@ -178,6 +178,8 @@ function ReplyCard({ t, messages, nameOf, busy, onSent }: { t: Row<EmailThread>;
   const [typed, setTyped] = useState("");
   const [typedCc, setTypedCc] = useState("");
   const [note, setNote] = useState<string | null>(null);
+  /** The last draft saved in Gmail: its link there, for Schedule send. */
+  const [draftUrl, setDraftUrl] = useState<string | null>(null);
   const [dup, setDup] = useState<{ field: "to" | "cc"; msg: string } | null>(null);
   const [editorKey, setEditorKey] = useState(0);
   const sig = useSignature();
@@ -223,8 +225,9 @@ function ReplyCard({ t, messages, nameOf, busy, onSent }: { t: Row<EmailThread>;
     if (await call("email.send", payload())) { discard(); setNote("Sent"); await onSent(); }
   }
   async function draft() {
-    setNote(null);
-    if (await call("email.draft", payload())) setNote("Draft saved in Gmail");
+    setNote(null); setDraftUrl(null);
+    const r = await call<{ gmailUrl?: string }>("email.draft", payload());
+    if (r) { discard(); setNote("Draft saved in Gmail: open it there to send or Schedule send"); setDraftUrl(r.gmailUrl ?? null); }
   }
 
   return (
@@ -254,7 +257,8 @@ function ReplyCard({ t, messages, nameOf, busy, onSent }: { t: Row<EmailThread>;
       <RichTextEditor key={editorKey} value={html} onChange={setHtml} placeholder="Write a reply…" testid="reply-body" />
       <SignatureBlock signature={sig} />
       <ErrorBox error={error} />
-      {note && <span className="chip g self-start" data-testid="reply-note">{note}</span>}
+      {note && <span className="flex flex-wrap items-center gap-2"><span className="chip g self-start" data-testid="reply-note">{note}</span>
+        {draftUrl && <a href={draftUrl} target="_blank" rel="noreferrer" className="btn sm acc" data-testid="reply-draft-open">Open in Gmail</a>}</span>}
       <div className="flex flex-wrap items-center justify-end gap-2">
         <button type="button" className="btn ghost" onClick={discard} disabled={working} data-testid="reply-discard">Discard</button>
         <button type="button" className="btn" onClick={draft} disabled={!canSend} data-testid="reply-draft">Save draft in Gmail</button>

@@ -174,7 +174,7 @@ test("email commands are admin only, and Roadie neither reads the mail nor sends
   for (const n of ["email.link", "email.unlink", "email.sync", "email.thread", "email.send", "email.draft"]) assert.deepEqual(registry[n].roles, ["admin"], n);
   assert.deepEqual(registry["pitches.draftEmail"].roles, ["admin", "mcp"]);
   assert.deepEqual(registry["pitches.checkReplies"].roles, ["admin"]);
-  for (const n of ["email.link", "email.sync", "email.thread"]) assert.ok(isExcluded(n), `${n} reads the band's mail`);
+  for (const n of ["email.link", "email.sync", "email.thread", "email.checkDrafts"]) assert.ok(isExcluded(n), `${n} reads the band's mail`);
   assert.ok(needsConfirm("email.send", {}));
 });
 
@@ -354,4 +354,53 @@ test("ingest adds the people on a place's mail as the band's contacts, linked to
   const jo = (await db.list(SYS, "contacts")).find((c) => c.emails?.[0] === "jo@milehigh.example")!;
   assert.deepEqual(pn.contactIds, [jo.id]);
   assert.equal(jo.name, "Jo Park");
+});
+
+const gmailPost = (p: string, body: unknown = {}) => fetch(`${gmailUrl}${p}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+
+test("a draft for later (Gmail's Schedule send): kept on every pitch it covers, logged with Gmail's send time once sent, dropped when deleted", async () => {
+  const { venueId, pitchId } = await pineHollow();
+  const v2 = await cmd("venues.create", venue("Heron"));
+  const { id: pitch2 } = await cmd("pitches.flag", { kind: "venue", id: v2.id });
+  await cmd("pitches.move", { id: pitchId, status: "toPitch" });
+  const d = await cmd("email.draft", { target: { kind: "venue", id: venueId }, pitchId, pitchIds: [pitch2], to: ["rosa@pinehollow.example"], subject: "Monday pitch", body: "Hi Rosa", markPitched: true });
+  assert.match(d.gmailUrl, /^https:\/\/mail\.google\.com\/mail\/\?authuser=rudy%40example\.com#drafts\?compose=m\d+$/);
+  for (const id of [pitchId, pitch2]) {
+    const kept = (await db.get(SYS, "pitches", id))!.gmailDrafts;
+    assert.equal(kept.length, 1, id);
+    assert.equal(kept[0].draftId, d.draftId);
+    assert.deepEqual(kept[0].pitchIds, [pitchId, pitch2]);
+    assert.equal(kept[0].markPitched, true);
+  }
+  // still a draft, then scheduled: nothing logged, the entry says scheduled
+  assert.deepEqual(await cmd("email.checkDrafts", { pitchIds: [pitchId] }), { sent: 0, pending: 1, gone: 0 });
+  await gmailPost(`/drafts/${d.draftId}/schedule`);
+  assert.deepEqual(await cmd("email.checkDrafts", { pitchIds: [pitch2] }), { sent: 0, pending: 1, gone: 0 });
+  assert.equal((await db.get(SYS, "pitches", pitchId))!.gmailDrafts[0].scheduled, true);
+  assert.equal((await db.list(SYS, "emailThreads")).length, 0, "not a thread until it is sent");
+  // Gmail sends it Monday 7:02 AM: logged on both pitches, dated then, To pitch -> Pitched, and the entry is gone
+  const monday = "2026-11-23T14:02:00.000Z";
+  await gmailPost(`/drafts/${d.draftId}/send`, { date: monday });
+  assert.deepEqual(await cmd("email.checkDrafts", { pitchIds: [pitchId, pitch2] }), { sent: 1, pending: 0, gone: 0 });
+  for (const id of [pitchId, pitch2]) {
+    const p = (await db.get(SYS, "pitches", id))!;
+    assert.equal(p.gmailDrafts ?? null, null, id);
+    assert.equal(p.lastContactAt.toDate().toISOString(), monday);
+    const sent = (await db.list(SYS, `pitches/${id}/activity`)).filter((a) => a.type === "emailSent");
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].gmail.subject, "Monday pitch");
+  }
+  assert.equal((await db.get(SYS, "pitches", pitchId))!.status, "pitched");
+  const t = (await db.list(SYS, "emailThreads"))[0];
+  assert.equal(t.firstDate, monday);
+  assert.deepEqual(t.target, { kind: "venue", id: venueId, name: "Pine Hollow" });
+  assert.deepEqual([t.pitchId, ...(t.pitchIds ?? [])].slice(0, 1), [pitchId]);
+  assert.deepEqual(await cmd("email.checkDrafts", { pitchIds: [pitchId] }), { sent: 0, pending: 0, gone: 0 }, "settled once");
+
+  // a draft deleted in Gmail: dropped with a note, never logged as sent
+  const g = await cmd("email.draft", { target: { kind: "venue", id: venueId }, pitchId, to: ["rosa@pinehollow.example"], subject: "Never mind", body: "x" });
+  await fetch(`${gmailUrl}/drafts/${g.draftId}`, { method: "DELETE" });
+  assert.deepEqual(await cmd("email.checkDrafts", { pitchIds: [pitchId] }), { sent: 0, pending: 0, gone: 1 });
+  assert.equal((await db.get(SYS, "pitches", pitchId))!.gmailDrafts ?? null, null);
+  assert.ok((await db.list(SYS, `pitches/${pitchId}/activity`)).some((a) => a.type === "note" && a.text === "Gmail draft deleted without sending: Never mind"));
 });

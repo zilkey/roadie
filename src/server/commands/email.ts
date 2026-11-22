@@ -15,6 +15,7 @@ import { unfilledFields } from "@/lib/booking";
 import { snippetOf } from "@/lib/email-text";
 import { displayHtml, sanitizeHtml, htmlToText } from "@/lib/email-html";
 import { signatureOf, nameFromAddress } from "@/lib/email-signature";
+import { gmailDraftLink } from "@/lib/email-compose";
 import { e164 } from "@/schema/normalize";
 import { BAND_NOTES, bandNoteId, emailThreadId, threadPitchIds, venueNoteId, email as emailSchema } from "@/schema";
 import { withBandNote } from "@/lib/bandNotes";
@@ -23,7 +24,7 @@ import { pathOf } from "@/schema/owners";
 import { bookingMailOf } from "../google/band";
 import { createNoted } from "../bandNotes";
 import { attachContact } from "../contactLinks";
-import { roleIn } from "@/schema";
+import { roleIn, Pitch as PitchSchema } from "@/schema";
 
 export const gmailFail = (e: unknown): never => {
   if (e instanceof IntegrationError) throw new AppError("gmail_error", `Gmail: ${e.message}`, 502);
@@ -269,28 +270,38 @@ export async function sendMail(ctx: Ctx, i: { place: Place; pitchId?: string; pi
   const gmail = gmailClient();
   const msg = await gmail.send({ account, to: i.to, cc: i.cc, subject: i.subject, body: i.body, html: i.html && sanitizeHtml(i.html), threadId: i.threadId }).catch(gmailFail);
   const thread = await gmail.getThread(msg.threadId, account).catch((): MailThread => ({ id: msg.threadId, subject: msg.subject, messages: [msg], lastDate: msg.date }));
-  return run(ctx, async (w) => {
-    const id = await upsertThread(w, { artistId, account, thread, place: i.place, pitchIds: ids, sentBy: { messageId: msg.id, uid: ctx.uid } });
-    let activityId: string | undefined;
-    // The same emailSent on every pitch the email covers; logging is keyed on the message id, so a re-run never doubles it.
-    for (const pitchId of ids) {
-      const p = (await w.get("pitches", pitchId))!;
-      const logged = (await w.query(activityOf(w.ctx.artistId, pitchId))).find((a) => a.gmail?.messageId === msg.id);
-      const act = logged ?? await w.create(activityOf(w.ctx.artistId, pitchId), {
-        type: "emailSent", text: i.body, gmail: { messageId: msg.id, threadId: msg.threadId, to: i.to.join(", "), subject: i.subject, account },
-      });
-      if (pitchId === ids[0]) activityId = act.id as string;
-      await w.update("pitches", pitchId, { lastContactAt: w.now });
-      if (i.markPitched && (p.status === "idea" || p.status === "toPitch")) {
-        await w.update("pitches", pitchId, { status: "pitched" });
-        await w.create(activityOf(w.ctx.artistId, pitchId), { type: "status", fromStatus: p.status, toStatus: "pitched" });
-      }
-    }
-    return { id, activityId, messageId: msg.id, threadId: msg.threadId };
-  });
+  return run(ctx, (w) => logSent(w, { artistId, account, thread, msg, place: i.place, ids, uid: ctx.uid, to: i.to, subject: i.subject, body: i.body, markPitched: i.markPitched }));
 }
 
-export async function draftMail(ctx: Ctx, i: { pitchId?: string; pitchIds?: string[]; threadId?: string; to: string[]; cc?: string[]; subject: string; body: string; html?: string }) {
+/**
+ * A sent email on Roadie: the thread on the place, and the same emailSent on every pitch it covers (keyed on the message id, so a
+ * re-run never doubles it), lastContactAt and, with markPitched, idea/To pitch → Pitched. `at`: when Gmail sent it, for a draft
+ * sent later from Gmail (email.checkDrafts); else now.
+ */
+async function logSent(w: Writer, i: { artistId: string; account: string; thread: MailThread; msg: { id: string; threadId: string }; place: Place; ids: string[]; uid: string; to: string[]; subject: string; body: string; markPitched?: boolean; at?: Date }) {
+  const { msg, ids } = i;
+  const id = await upsertThread(w, { artistId: i.artistId, account: i.account, thread: i.thread, place: i.place, pitchIds: ids, sentBy: { messageId: msg.id, uid: i.uid } });
+  let activityId: string | undefined;
+  for (const pitchId of ids) {
+    const p = await w.get("pitches", pitchId);
+    if (!p || p.deletedAt) continue;
+    const logged = (await w.query(activityOf(w.ctx.artistId, pitchId))).find((a) => a.gmail?.messageId === msg.id);
+    const act = logged ?? await w.create(activityOf(w.ctx.artistId, pitchId), {
+      type: "emailSent", text: i.body, gmail: { messageId: msg.id, threadId: msg.threadId, to: i.to.join(", "), subject: i.subject, account: i.account },
+    });
+    if (pitchId === ids[0]) activityId = act.id as string;
+    const last = (p.lastContactAt as { toMillis?(): number } | undefined)?.toMillis?.() ?? 0;
+    if (!i.at || i.at.getTime() > last) await w.update("pitches", pitchId, { lastContactAt: i.at ?? w.now });
+    if (i.markPitched && (p.status === "idea" || p.status === "toPitch")) {
+      await w.update("pitches", pitchId, { status: "pitched" });
+      await w.create(activityOf(w.ctx.artistId, pitchId), { type: "status", fromStatus: p.status, toStatus: "pitched" });
+    }
+  }
+  return { id, activityId, messageId: msg.id, threadId: msg.threadId };
+}
+
+
+export async function draftMail(ctx: Ctx, i: { pitchId?: string; pitchIds?: string[]; threadId?: string; to: string[]; cc?: string[]; subject: string; body: string; html?: string; place?: Place; markPitched?: boolean }) {
   const missing = unfilledFields(`${i.subject}\n${i.body}`);
   if (missing.length) throw new AppError("unfilled_fields", `Fill in ${missing.map((m) => `{{${m}}}`).join(", ")} before drafting`, 400);
   const ids = allPitches(i);
@@ -302,8 +313,74 @@ export async function draftMail(ctx: Ctx, i: { pitchId?: string; pitchIds?: stri
     const act = await db.create(ctx, activityOf(ctx.artistId, pitchId), { type: "note", text: `Email drafted (not sent) to ${i.to.join(", ")}: ${i.subject}\n\n${i.body}` });
     id ??= act.id as string;
   }
-  return { id, draftId: draft.id, sent: false as const };
+  // Kept on each pitch until Gmail sends it (Schedule send, or Send there): email.checkDrafts then logs it with Gmail's send time.
+  if (ids.length && draft.messageId && draft.threadId) {
+    const place = i.place ?? await placeOfPitch(ctx, await requirePitchDoc(ctx, ids[0]));
+    const entry = { draftId: draft.id, messageId: draft.messageId, threadId: draft.threadId, account, at: new Date().toISOString(), to: i.to.join(", "), subject: i.subject, pitchIds: ids, place, markPitched: !!i.markPitched };
+    await run(ctx, async (w) => {
+      for (const pitchId of ids) {
+        const p = await w.get("pitches", pitchId);
+        await w.update("pitches", pitchId, { gmailDrafts: [...((p?.gmailDrafts as unknown[] | undefined) ?? []), entry] });
+      }
+    });
+  }
+  return { id, draftId: draft.id, sent: false as const, ...(draft.messageId ? { gmailUrl: gmailDraftLink({ account, messageId: draft.messageId }) } : {}) };
 }
+
+type DraftEntry = NonNullable<z.infer<typeof PitchSchema>["gmailDrafts"]>[number];
+
+/**
+ * The drafts on these pitches, as Gmail has them now (Jeff, 2026-11-22: drafted on a Sunday, sent Monday morning with Gmail's
+ * Schedule send). Sent: logged like email.send, dated when Gmail sent it, and taken off every pitch it covers. Deleted in Gmail:
+ * taken off with a note. Still a draft or scheduled: left, with whether it is scheduled.
+ */
+export async function checkDrafts(ctx: Ctx, pitchIds: string[]): Promise<{ sent: number; pending: number; gone: number }> {
+  const out = { sent: 0, pending: 0, gone: 0 };
+  const entries = new Map<string, DraftEntry>();
+  for (const pid of pitchIds) {
+    const p = await db.get(ctx, "pitches", pid);
+    if (p && !p.deletedAt && p.artistId === ctx.artistId) for (const d of (p.gmailDrafts as DraftEntry[] | undefined) ?? []) entries.set(d.draftId, d);
+  }
+  const gmail = gmailClient();
+  for (const d of entries.values()) {
+    const st = await gmail.draftStatus(d.account, d).catch(gmailFail);
+    if (st.state === "draft" || st.state === "scheduled") {
+      out.pending++;
+      if (!!d.scheduled !== (st.state === "scheduled")) await settle(ctx, d, { ...d, scheduled: st.state === "scheduled" });
+      continue;
+    }
+    if (st.state === "sent") {
+      const { message: m, thread } = st;
+      await run(ctx, async (w) => {
+        await logSent(w, { artistId: ctx.artistId, account: d.account, thread, msg: m, place: d.place, ids: d.pitchIds, uid: ctx.uid, to: m.to.length ? m.to : d.to.split(", "), subject: m.subject || d.subject, body: m.body, markPitched: d.markPitched, at: new Date(m.date) });
+        await dropDraft(w, d);
+      });
+      out.sent++;
+    } else {
+      await run(ctx, async (w) => {
+        await dropDraft(w, d);
+        for (const pid of d.pitchIds) if (await w.get("pitches", pid)) await w.create(activityOf(w.ctx.artistId, pid), { type: "note", text: `Gmail draft deleted without sending: ${d.subject}` });
+      });
+      out.gone++;
+    }
+  }
+  return out;
+}
+async function dropDraft(w: Writer, d: DraftEntry) {
+  for (const pid of d.pitchIds) {
+    const p = await w.get("pitches", pid);
+    if (!p) continue;
+    const left = ((p.gmailDrafts as DraftEntry[] | undefined) ?? []).filter((x) => x.draftId !== d.draftId);
+    await w.update("pitches", pid, { gmailDrafts: left.length ? left : null });
+  }
+}
+/** Replace one draft entry on every pitch it covers. */
+const settle = (ctx: Ctx, d: DraftEntry, next: DraftEntry) => run(ctx, async (w) => {
+  for (const pid of d.pitchIds) {
+    const p = await w.get("pitches", pid);
+    if (p) await w.update("pitches", pid, { gmailDrafts: ((p.gmailDrafts as DraftEntry[] | undefined) ?? []).map((x) => (x.draftId === d.draftId ? next : x)) });
+  }
+});
 
 /** The pitch-level "check for replies": link the threads this pitch's timeline already mentions (older pitches), then sync the place. */
 export async function checkPitchReplies(ctx: Ctx, pitchId: string): Promise<{ added: number }> {
@@ -440,9 +517,17 @@ export const emailSend = defineCommand({
 
 export const emailDraft = defineCommand({
   name: "email.draft", roles: ["admin"],
-  description: "Save an email as a Gmail draft (never sends); with pitchId a note goes on the pitch timeline.",
-  input: sendIn.omit({ markPitched: true }),
-  async run(ctx, i) { const { target: _t, ...rest } = i; return draftMail(ctx, rest); },
+  description: "Save an email as a Gmail draft (never sends); with pitchId a note goes on the pitch timeline and the draft is kept on the pitch until Gmail sends it " +
+    "(email.checkDrafts logs it then, dated when Gmail sent it; markPitched applies at that point). Returns gmailUrl: the draft in Gmail, where Schedule send is.",
+  input: sendIn,
+  async run(ctx, i) { const { target, ...rest } = i; return draftMail(ctx, { ...rest, place: await resolvePlace(ctx, target) }); },
+});
+
+export const emailCheckDrafts = defineCommand({
+  name: "email.checkDrafts", roles: ["admin"],
+  description: "Look up the Gmail drafts kept on these pitches (email.draft): a draft Gmail has sent (Send, or Schedule send when its time came) is logged like email.send, dated when Gmail sent it; one deleted in Gmail is dropped. Returns {sent, pending, gone}.",
+  input: z.strictObject({ pitchIds: z.array(z.string().min(1)).min(1).max(100) }),
+  run: (ctx, i) => checkDrafts(ctx, i.pitchIds),
 });
 
 export const emailSignature = defineCommand({
@@ -627,4 +712,4 @@ export const emailPeople = defineCommand({
   },
 });
 
-export const emailCommands = [emailSignature, emailLink, emailUnlink, emailSync, emailThread, emailSend, emailDraft, emailSearch, emailPeople, emailSuggest];
+export const emailCommands = [emailSignature, emailLink, emailUnlink, emailSync, emailThread, emailSend, emailDraft, emailCheckDrafts, emailSearch, emailPeople, emailSuggest];

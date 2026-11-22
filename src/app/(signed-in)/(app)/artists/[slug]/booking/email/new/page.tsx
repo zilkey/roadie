@@ -222,7 +222,8 @@ function ComposeForm({ thread }: { thread: Row<EmailThread> | null }) {
   const missing = unfilledFields(`${subject}\n${htmlToText(f.html)}`);
   const canMark = pitch?.status === "idea" || pitch?.status === "toPitch";
   const [markPitched, setMarkPitched] = useState(true);
-  const [drafted, setDrafted] = useState(false);
+  /** Saved as a Gmail draft: its link in Gmail ("" when Gmail gave none), where Schedule send is (Jeff, 2026-11-22). */
+  const [drafted, setDrafted] = useState<string | null>(null);
   const sendId = useRef(newMutationId());
 
   const back = thread ? `/booking/email/${thread.id}` : pitchId ? `/booking/pitches/${pitchId}` : place ? hrefFor(place.kind, place.id) : "/booking";
@@ -242,8 +243,9 @@ function ComposeForm({ thread }: { thread: Row<EmailThread> | null }) {
     if (r?.id) { await draft.clear(); if (queue.length) nextInQueue(); else router.replace(`/booking/email/${r.id}`); } // replace: back from the thread skips this spent form
   }
   async function saveDraft() {
-    setDrafted(false);
-    if (await call("email.draft", payload())) setDrafted(true);
+    setDrafted(null);
+    const r = await call<{ gmailUrl?: string }>("email.draft", { ...payload(), ...(canMark ? { markPitched } : {}) });
+    if (r) { setDrafted(r.gmailUrl ?? ""); await draft.clear(); }
   }
   async function cancel() {
     await draft.clear();
@@ -371,6 +373,18 @@ function ComposeForm({ thread }: { thread: Row<EmailThread> | null }) {
           {artist?.bookingMail ? <>Sends from the booking mailbox ({artist.bookingMail.email}), so it shows in Sent there too.</> : <>Sends from your Gmail, so it shows in Sent there too. To send every admin&apos;s booking email from one address, its owner turns it on in <Link href="/admin/google" className="underline" data-testid="booking-mail-settings">Settings › Google</Link> (Use my Gmail).</>} {thread ? "The reply stays on the thread." : `The thread lands on this ${word}${pitchId ? " and on the pitch" : ""}`}, and replies come back here.
         </div>
 
+        {drafted !== null && (
+          <div className="d-warn" role="status" data-testid="email-drafted">
+            <div className="grid min-w-0 flex-1 gap-1">
+              <b>Draft saved in Gmail.</b>
+              <span className="s">To send it later, open it in Gmail and use Schedule send. {pitchId ? "Roadie logs it on the pitch once Gmail sends it, with the time it went." : ""}</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {drafted && <a href={drafted} target="_blank" rel="noreferrer" className="btn acc" data-testid="email-drafted-open">Open in Gmail</a>}
+              <button type="button" className="btn ghost" onClick={() => (queue.length ? nextInQueue() : router.push(back))} data-testid="email-drafted-done">{queue.length ? "Next" : "Done"}</button>
+            </div>
+          </div>
+        )}
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="grid gap-1">
             {canMark && (
@@ -379,9 +393,8 @@ function ComposeForm({ thread }: { thread: Row<EmailThread> | null }) {
             <DraftNote restoredAt={draft.restoredAt} status={draft.status} onStartOver={() => void draft.clear({ reset: true })} />
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {drafted && <span className="chip g" data-testid="email-drafted">Draft saved in Gmail</span>}
             <button type="button" className="btn ghost" onClick={() => void cancel()} data-testid="email-cancel">Cancel</button>
-            <button type="button" className="btn ghost" disabled={!canSend} onClick={() => void saveDraft()} data-testid="email-draft">Save draft in Gmail</button>
+            <button type="button" className="btn ghost" disabled={!canSend} onClick={() => void saveDraft()} data-testid="email-draft" title="Save it in Gmail's Drafts, to send from there or schedule with Schedule send">Save draft in Gmail</button>
             <button type="button" className="btn acc" disabled={!canSend} onClick={() => void send()} data-testid="email-send">Send</button>
           </div>
         </div>

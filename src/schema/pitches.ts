@@ -21,6 +21,16 @@ export const Pitch = entity({
   tourId: id.optional(),
   /** The booking campaign this pitch is in (campaigns/{id}), set by pitches.setCampaign. Missing = Ongoing. Kept when the campaign closes. */
   campaignId: id.optional(),
+  /**
+   * Emails saved as Gmail drafts and not sent yet (email.draft), most often to be sent with Gmail's Schedule send. On every pitch
+   * the draft covers; email.checkDrafts logs one as sent, with Gmail's send time, once Gmail has sent it, and drops one that was
+   * deleted. Written only by those commands.
+   */
+  gmailDrafts: z.array(z.strictObject({
+    draftId: z.string(), messageId: z.string(), threadId: z.string(), account: z.string(), at: z.string(),
+    to: z.string(), subject: z.string(), pitchIds: z.array(id), place: z.strictObject({ kind: z.enum(["venue", "promoter", "festival", "act"]), id, name: z.string() }),
+    markPitched: z.boolean(), scheduled: z.boolean().optional(),
+  })).optional(),
   ...sourcesShape,
 });
 export const PitchInput = Pitch.omit(serverMask);

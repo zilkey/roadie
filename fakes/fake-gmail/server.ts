@@ -5,7 +5,7 @@ export interface GMessage {
   id: string; threadId: string; account: string; direction: "sent" | "received";
   from: string; /** Display name of the sender; missing on messages written before it existed. */ fromName?: string; to: string[]; cc: string[]; subject: string; body: string; html?: string; date: string;
 }
-export interface GDraft { id: string; account: string; to: string[]; cc: string[]; subject: string; body: string; html?: string; threadId?: string; date: string }
+export interface GDraft { id: string; account: string; to: string[]; cc: string[]; subject: string; body: string; html?: string; threadId?: string; date: string; messageId?: string; /** Gmail's Schedule send: out of Drafts, waiting to go. */ scheduled?: boolean }
 export interface GmailState { seq: number; messages: GMessage[]; drafts: GDraft[]; /** Gmail signature (HTML) per account, set with PUT /settings/signature. */ signatures?: Record<string, string> }
 
 const list = (v: unknown): string[] => (Array.isArray(v) ? v.map(String) : v ? [String(v)] : []);
@@ -29,9 +29,29 @@ const routes: Route<GmailState>[] = [
   }],
   ["POST", "/drafts", ({ body }, s) => {
     required(body, "from", "subject");
-    const d: GDraft = { id: `d${++s.seq}`, account: body.from, to: list(body.to), cc: list(body.cc), subject: body.subject, body: body.body ?? "", ...(body.html ? { html: String(body.html) } : {}), threadId: body.threadId, date: new Date().toISOString() };
+    // Like Gmail, a draft has its own message and a thread: the one it answers, or a new one.
+    const d: GDraft = { id: `d${++s.seq}`, account: body.from, to: list(body.to), cc: list(body.cc), subject: body.subject, body: body.body ?? "", ...(body.html ? { html: String(body.html) } : {}),
+      threadId: body.threadId || `t${++s.seq}`, messageId: `m${++s.seq}`, date: new Date().toISOString() };
     s.drafts.push(d);
     return { json: d };
+  }],
+  // Test setup, what a person does in Gmail with a draft Roadie made: Schedule send (scheduled), send it (optionally at `date`), or delete it.
+  ["POST", "/drafts/:id/schedule", ({ params }, s) => { const d = need(s.drafts.find((x) => x.id === params.id), "Draft"); d.scheduled = true; return d; }],
+  ["POST", "/drafts/:id/send", ({ params, body }, s) => {
+    const d = need(s.drafts.find((x) => x.id === params.id), "Draft");
+    s.drafts = s.drafts.filter((x) => x !== d);
+    const m: GMessage = { id: d.messageId ?? `m${++s.seq}`, threadId: d.threadId ?? `t${++s.seq}`, account: d.account, direction: "sent", from: d.account, fromName: "", to: d.to, cc: d.cc,
+      subject: d.subject, body: d.body, ...(d.html ? { html: d.html } : {}), date: body?.date ? new Date(String(body.date)).toISOString() : new Date().toISOString() };
+    s.messages.push(m);
+    return { json: m }; // wrapped: see /messages/send
+  }],
+  ["DELETE", "/drafts/:id", ({ params }, s) => { s.drafts = s.drafts.filter((x) => x.id !== params.id); return { ok: true }; }],
+  ["GET", "/drafts/:id/status", ({ params, query }, s) => {
+    const d = s.drafts.find((x) => x.id === params.id);
+    if (d) return { state: d.scheduled ? "scheduled" : "draft" };
+    const t = threadsOf(s).find((x) => x.id === query.get("threadId"));
+    const message = t?.messages.find((m) => m.id === query.get("messageId") && m.direction === "sent");
+    return message ? { json: { state: "sent", message, thread: t } } : { state: "gone" };
   }],
   ["GET", "/drafts", ({ query }, s) => s.drafts.filter((d) => !query.get("account") || d.account === query.get("account"))],
   ["GET", "/messages", ({ query }, s) => {
