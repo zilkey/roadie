@@ -17,10 +17,11 @@ import { PitchSummaryCard, usePlaceThreads } from "@/components/booking/PitchSum
 import { AddContactDialog } from "@/components/booking/AddContactDialog";
 import { InlineValue, PlusButton } from "@/components/InlineValue";
 import { PickDialog, RowX } from "@/components/booking/PickDialog";
+import { PromoterPitchedShows } from "@/components/booking/PromoterPitchedShows";
 import { withBandNote } from "@/lib/bandNotes";
 import type { Promoter } from "@/schema";
 
-/** A promoter's one page (#82): Pitch | Promoter details. Its own route opens Promoter details; its pitch's route opens Pitch. */
+/** A promoter's one page (#82): Pitch (its pitch, then the shows pitched at its venues) | Promoter details. Its own route opens Promoter details; its pitch's route opens Pitch. */
 export function PromoterWorkspace(props: { placeId: string; pitchId?: string; defaultTab: "pitch" | "details" }) { return <AdminOnly><PromoterPage {...props} /></AdminOnly>; }
 
 const KIND_LABEL: Record<Promoter["kind"], string> = {
@@ -87,6 +88,7 @@ function PromoterPage({ placeId: id, pitchId, defaultTab }: { placeId: string; p
       <ErrorBox error={error} />
 {place.tabs("Promoter details")}
       {place.body}
+      {place.tab === "pitch" && <PromoterPitchedShows venues={venues} />}
       {place.tab === "details" && <>
       <CardGroup kind="shared">
         <DetailCard title="About" edit={edit} editKey="about" locked={!canEditShared} warn={SHARED_WARN} editTestid="edit-toggle"

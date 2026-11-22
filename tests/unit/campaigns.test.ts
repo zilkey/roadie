@@ -131,3 +131,17 @@ test("email queue: round-trips, drops unsafe parts, and walks to the end", async
   assert.match(h, /^\/booking\/email\/new\?thread=art__t2&pitch=p2&queue=p1%2Cp2%7Eart__t2&at=1&back=%2Fbooking%2Fcampaigns%2Fc1$/);
   assert.equal(queueHref(items, 2, "/x"), null);
 });
+
+test("promoterShowTouches: the shows pitched at a promoter's rooms, all of them as a list first, soonest first, past ones left out", async () => {
+  const { promoterShowTouches } = await import("@/lib/personalTouches");
+  const t = promoterShowTouches([
+    { id: "b", date: "2026-12-18", acts: [{ name: "Tin Cup Jane", role: "headliner" }], venueName: "Fox Theatre" },
+    { id: "a", date: "2026-12-05", acts: [], title: "Holiday Revue", venueName: "Boulder Theater" },
+    { id: "old", date: "2026-01-01", acts: [{ name: "Gone", role: "headliner" }], venueName: "Fox Theatre" },
+  ], "2026-11-22");
+  assert.deepEqual(t.map((x) => x.key), ["shows:all", "show:a", "show:b"]);
+  assert.deepEqual(t[0].lines, ["Holiday Revue at Boulder Theater, Sat, Dec 5", "Tin Cup Jane at Fox Theatre, Fri, Dec 18"]);
+  assert.equal(t[2].text, "We'd love to open for Tin Cup Jane at Fox Theatre on Fri, Dec 18.");
+  // one show: no "all" line
+  assert.deepEqual(promoterShowTouches([{ id: "x", date: "2026-12-01", acts: [{ name: "Solo", role: "headliner" }], venueName: "Fox" }], "2026-11-22").map((x) => x.key), ["show:x"]);
+});

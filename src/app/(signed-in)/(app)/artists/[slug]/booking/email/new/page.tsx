@@ -17,6 +17,7 @@ import { draftPath } from "@/schema/drafts";
 import { decodeQueue, queueHref } from "@/lib/emailQueue";
 import { ROUTES } from "@/lib/routes";
 import { PersonalTouches } from "@/components/booking/PersonalTouches";
+import { PromoterShowTouches } from "@/components/booking/PromoterShowTouches";
 
 const escapeHtml = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 import { buildTemplateContext, fillTemplate, isActive, unfilledFields } from "@/lib/booking";
@@ -100,11 +101,22 @@ function ComposeForm({ thread }: { thread: Row<EmailThread> | null }) {
   const f = draft.value;
   const set = (p: Partial<Form>) => draft.setValue({ ...draft.value, ...p });
 
+  // The venue pitches one email to a promoter covers (#82 S8): their rooms' contacts are offered too, after the promoter's own.
+  const coveredVenues = useMemo(() => place?.kind !== "promoter" ? [] : [...(pitch ? [pitch] : []), ...covered]
+    .filter((p) => p.target.kind === "venue").map((p) => b.venues.find((v) => v.id === p.target.id)).filter((v) => !!v),
+  [place?.kind, pitch, covered, b.venues]); // eslint-disable-line react-hooks/exhaustive-deps
   const people = useMemo(() => {
     if (!place) return [] as Row<Contact>[];
-    const mine = place.contactIds.map((id) => b.contacts.find((c) => c.id === id)).filter((c): c is Row<Contact> => !!c && c.emails.length > 0);
-    return place.kind === "venue" ? roleFirst(mine, place.booking) : mine;
-  }, [place, b.contacts]);
+    const find = (ids: readonly string[]) => ids.map((id) => b.contacts.find((c) => c.id === id)).filter((c): c is Row<Contact> => !!c && c.emails.length > 0);
+    const mine = find(place.contactIds);
+    if (place.kind === "venue") return roleFirst(mine, place.booking);
+    // One address once: Z2's rooms all list bookingasst@z2ent.com (Jeff, 2026-11-22: "doesn't have the promoter contacts filled in").
+    const seen = new Set(mine.flatMap((c) => c.emails[0]));
+    const rooms = coveredVenues.flatMap((v) => roleFirst(find(v.contactIds), v.bookingContactIds))
+      .filter((c) => !seen.has(c.emails[0]) && (seen.add(c.emails[0]), true));
+    return [...mine, ...rooms];
+  }, [place, b.contacts, coveredVenues]);
+  const venueOf = (c: Row<Contact>) => place?.contactIds.includes(c.id) ? undefined : coveredVenues.find((v) => v.contactIds.includes(c.id))?.name;
 
   // The To row. Until the person changes it, it is the ?to= contact, else (new email) the first booking contact, else (a reply) whoever wrote last.
   const wanted = params.get("to");
@@ -267,6 +279,7 @@ function ComposeForm({ thread }: { thread: Row<EmailThread> | null }) {
                 <PickChip key={c.id} on={c.emails.some((e) => to.includes(e))} onToggle={() => togglePerson(c)} testid={`contact-pick-${c.name}`}>
                   {c.name}
                   <span className="font-normal opacity-75" data-testid={`contact-pick-email-${c.name}`}>{c.emails[0]}</span>
+                  {venueOf(c) && <span className="chip" data-testid={`contact-pick-venue-${c.name}`}>{venueOf(c)}</span>}
                   {place?.v && rolesOf(place.v, c.id).map((r) => <span key={r} className="chip a" data-testid={`contact-pick-role-${r}`}>{ROLE_LABEL[r]}</span>)}
                 </PickChip>
               ))}
@@ -351,10 +364,11 @@ function ComposeForm({ thread }: { thread: Row<EmailThread> | null }) {
         </div>
         {missing.length > 0 && <div className="note s" data-testid="email-missing">Still to fill in: {missing.map((m) => `{{${m}}}`).join(", ")}</div>}
 
+        {place?.kind === "promoter" && <PromoterShowTouches pitchIds={[...(pitch ? [pitch.id] : []), ...covered.map((p) => p.id)]} onInsert={(h) => set({ html: `${f.html}${h}` })} />}
         {place?.kind === "venue" && pitch && <PersonalTouches venueId={place.id} venueName={place.name} pitchId={pitch.id} onInsert={(t) => set({ html: `${f.html}<p>${escapeHtml(t)}</p>` })} />}
         {covered.length > 0 && <div className="note s" data-testid="email-covers">This email covers {[...(pitch ? [pitch] : []), ...covered].map((p) => p.target.name).join(", ")}: it is logged on each of their pitches.</div>}
         <div className="note s" data-testid="email-note">
-          {artist?.bookingMail ? <>Sends from the booking mailbox ({artist.bookingMail.email}), so it shows in Sent there too.</> : "Sends from your Gmail, so it shows in Sent there too."} {thread ? "The reply stays on the thread." : `The thread lands on this ${word}${pitchId ? " and on the pitch" : ""}`}, and replies come back here.
+          {artist?.bookingMail ? <>Sends from the booking mailbox ({artist.bookingMail.email}), so it shows in Sent there too.</> : <>Sends from your Gmail, so it shows in Sent there too. To send every admin&apos;s booking email from one address, its owner turns it on in <Link href="/admin/google" className="underline" data-testid="booking-mail-settings">Settings › Google</Link> (Use my Gmail).</>} {thread ? "The reply stays on the thread." : `The thread lands on this ${word}${pitchId ? " and on the pitch" : ""}`}, and replies come back here.
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-2">

@@ -30,7 +30,7 @@ import { Crumbs, useBookingSearch } from "@/components/booking/BookingNav";
 import { homeOf, inCampaign, liveCampaigns, ONGOING, statusCounts, type CampaignKey } from "@/lib/campaigns";
 import { InlineValue } from "@/components/InlineValue";
 import { MoveToCampaignDialog } from "@/components/booking/MoveToCampaign";
-import { FlagCampaignSelect, useFlagCampaign } from "@/components/booking/FlagCampaign";
+import { FlagCampaignSelect, campaignArg, useFlagCampaign } from "@/components/booking/FlagCampaign";
 import { groupByPromoter, type Grouped } from "@/lib/promoterGroups";
 import { emailCells, type ThreadLike } from "@/lib/emailCells";
 import { queueHref, type QueueItem } from "@/lib/emailQueue";
@@ -298,7 +298,7 @@ function Booking({ seg, campaign }: { seg: Tab; campaign?: CampaignKey }) {
           </div>
         )}
         {note && <p className="s" role="status" data-testid="selection-note">{note}</p>}
-        {shownRows.length > 0 && <div className="book-tw"><BookingTable seg={listSeg} rows={shownRows} onFlag={(t) => void flag(t)} sort={sort} onSort={setSort} selected={seg === "pitches" ? picked : undefined} onSelect={togglePick} campaigns={live} group={seg === "pitches"} threads={threads} weKnow={weKnow} /></div>}
+        {shownRows.length > 0 && <div className="book-tw"><BookingTable seg={listSeg} rows={shownRows} onFlag={(t) => void flag(t)} sort={sort} onSort={setSort} selected={seg === "pitches" ? picked : undefined} onSelect={togglePick} campaigns={live} group={seg === "pitches"} campaign={campaign} threads={threads} weKnow={weKnow} /></div>}
         {shownRows.length > 0 && CAPTION[listSeg] && <p className="s" data-testid="table-caption">{CAPTION[listSeg]}</p>}
         {seg === "festivals" && page.hasMore && (
           <button type="button" className="btn ghost justify-self-center" disabled={page.loadingMore} onClick={() => void page.more()} data-testid="festivals-more">
@@ -386,7 +386,7 @@ const FlagIcon = ({ filled }: { filled: boolean }) => (
 );
 
 /** `q` marks the matched text in the name and email cells; without `onSort` the headers don't sort (search buckets). */
-export function BookingTable({ seg, rows, onFlag, sort = "name", onSort, q = "", compact = false, selected, onSelect, campaigns, group = false, threads, weKnow }: { seg: Seg; rows: ListRow[]; onFlag(t: PitchTarget): void; sort?: FestivalSort; onSort?(s: FestivalSort): void; q?: string; compact?: boolean; /** Pitch List: pitch ids ticked, and the toggle (admins). Without them there is no checkbox column. */ selected?: string[]; onSelect?(pitchId: string): void; /** The band's live campaigns: Venues and Festivals get a Campaign column (#82). */ campaigns?: ReadonlyMap<string, Campaign>; /** Campaign pages: venues nest under their promoter (#82 S5). */ group?: boolean; /** Campaign pages: the band's email threads, for the email columns (#82 S7). */ threads?: readonly ThreadLike[]; /** Venue ids with someone we know (#82 S10): their rows get the chip. */ weKnow?: Set<string> }) {
+export function BookingTable({ seg, rows, onFlag, sort = "name", onSort, q = "", compact = false, selected, onSelect, campaigns, group = false, campaign, threads, weKnow }: { seg: Seg; rows: ListRow[]; onFlag(t: PitchTarget): void; sort?: FestivalSort; onSort?(s: FestivalSort): void; q?: string; compact?: boolean; /** Pitch List: pitch ids ticked, and the toggle (admins). Without them there is no checkbox column. */ selected?: string[]; onSelect?(pitchId: string): void; /** The band's live campaigns: Venues and Festivals get a Campaign column (#82). */ campaigns?: ReadonlyMap<string, Campaign>; /** Campaign pages: venues nest under their promoter (#82 S5). */ group?: boolean; /** Campaign pages: the campaign a promoter's new pitch goes in. */ campaign?: CampaignKey; /** Campaign pages: the band's email threads, for the email columns (#82 S7). */ threads?: readonly ThreadLike[]; /** Venue ids with someone we know (#82 S10): their rows get the chip. */ weKnow?: Set<string> }) {
   const hl = (text: string): ReactNode => {
     if (!q.trim()) return text;
     const h = highlight(text, q);
@@ -399,6 +399,7 @@ export function BookingTable({ seg, rows, onFlag, sort = "name", onSort, q = "",
   const { call: callMove, busy: moving } = useCommand();
   // In-place edits on a campaign page: status, lineup, next step; Write follow-up opens a modal (#82, Jeff 2026-11-12).
   const { call: edit, error: editError } = useCommand();
+  const { call: callOpen, error: openError, busy: opening } = useCommand();
   const [followUp, setFollowUp] = useState<{ pitch: PitchRow; threadId?: string } | null>(null);
   const move = (pitchId: string, into: CampaignKey) => callMove("pitches.setCampaign", { ids: [pitchId], campaignId: into === ONGOING ? null : into });
   const flagged = seg !== "contacts";
@@ -552,6 +553,11 @@ export function BookingTable({ seg, rows, onFlag, sort = "name", onSort, q = "",
     return firsts[0] && firsts.every((x) => x === firsts[0]) ? g.children[0] : null;
   };
   // A promoter group (#82 S5): ticks every pitch in it, rolls up their statuses; the promoter's own pitch, if any, fills the row.
+  /** A promoter group's own pitch: pitches.flag returns the open one, or starts an empty one in this campaign. */
+  const openPromoterPitch = async (promoterId: string) => {
+    const r = await callOpen<{ id: string }>("pitches.flag", { kind: "promoter", id: promoterId, ...campaignArg(campaign) });
+    if (r) router.push(`/booking/pitches/${r.id}`);
+  };
   const groupEl = (g: Extract<Grouped<ListRow>, { type: "group" }>) => {
     const own = g.own;
     const shared = sharedThread(g);
@@ -569,7 +575,9 @@ export function BookingTable({ seg, rows, onFlag, sort = "name", onSort, q = "",
         {flagged && (own ? flag(own) : <td className="flag" />)}
         <td className="name">
           <span className="flex flex-wrap items-center gap-1.5">
-            <Link href={own?.pitch ? `/booking/pitches/${own.pitch.id}` : hrefFor("promoter", g.promoter.id)} className="nm" data-testid={`group-name-${g.promoter.id}`}>{hl(g.promoter.name)}</Link>
+            {/* The promoter's name opens its pitch; without one it starts it here, empty, in this campaign (Jeff, 2026-11-22). */}
+            {own?.pitch ? <Link href={`/booking/pitches/${own.pitch.id}`} className="nm" data-testid={`group-name-${g.promoter.id}`}>{hl(g.promoter.name)}</Link>
+              : <button type="button" className="nm text-left" disabled={opening} data-testid={`group-name-${g.promoter.id}`} onClick={() => void openPromoterPitch(g.promoter.id)}>{hl(g.promoter.name)}</button>}
             <span className="chip">Promoter</span>
           </span>
           <span className="sub">{g.children.length} {g.children.length === 1 ? "venue" : "venues"}{cities ? ` · ${cities}` : ""}{own ? " · and the promoter's own pitch" : ""}</span>
@@ -585,6 +593,7 @@ export function BookingTable({ seg, rows, onFlag, sort = "name", onSort, q = "",
   };
 
   return (<>
+    <ErrorBox error={openError} />
     <table className={wideName ? "book-table wn" : seg === "pitches" ? "book-table camp" : "book-table"}>
       <thead><tr>
         {selected && <th className="flag" aria-label="Select" />}

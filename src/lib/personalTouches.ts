@@ -41,3 +41,25 @@ export function personalTouches(i: TouchInput): Touch[] {
   if (i.venueNote?.trim()) out.push({ key: "venueNote", label: `Our note on ${i.placeName}: ${i.venueNote.trim()}`, text: i.venueNote.trim() });
   return out;
 }
+
+/** A show pitched at one of the venues a promoter email covers. */
+export interface PitchedShow { id: string; date: string; acts: { name: string; role: string }[]; title?: string; venueName: string }
+
+/**
+ * One email to a promoter about several venues (Jeff, 2026-11-22): the shows pitched at those venues, soonest first. With more
+ * than one, the first touch inserts them all as one list; then each show on its own. Past shows are left out.
+ */
+export function promoterShowTouches(shows: PitchedShow[], today: string): (Touch & { lines?: string[] })[] {
+  const line = (e: PitchedShow) => {
+    const head = e.acts.find((a) => a.role === "headliner") ?? e.acts[0];
+    return { head: head?.name ?? e.title ?? "a show", text: `${head?.name ?? e.title ?? "A show"} at ${e.venueName}, ${fmtPitchDate(e.date)}` };
+  };
+  const up = shows.filter((e) => e.date >= today).sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+  const out: (Touch & { lines?: string[] })[] = [];
+  if (up.length > 1) out.push({ key: "shows:all", label: `All ${up.length} pitched shows`, text: "We'd love to open any of these shows:", lines: up.map((e) => line(e).text) });
+  for (const e of up) {
+    const l = line(e);
+    out.push({ key: `show:${e.id}`, label: `Pitched: ${l.text}`, text: `We'd love to open for ${l.head} at ${e.venueName} on ${fmtPitchDate(e.date)}.` });
+  }
+  return out;
+}

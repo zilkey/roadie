@@ -1,5 +1,8 @@
 {
   "indexes": [
+    { "collectionGroup": "venueEventNotes", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "artistId", "order": "ASCENDING" }, { "fieldPath": "venueId", "order": "ASCENDING" }, { "fieldPath": "deletedAt", "order": "ASCENDING" }] },
+    { "collectionGroup": "venueEventNotes", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "artistId", "order": "ASCENDING" }, { "fieldPath": "pitchId", "order": "ASCENDING" }, { "fieldPath": "deletedAt", "order": "ASCENDING" }] },
+    { "collectionGroup": "venueEvents", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "venueId", "order": "ASCENDING" }, { "fieldPath": "deletedAt", "order": "ASCENDING" }] },
     { "collectionGroup": "history", "queryScope": "COLLECTION_GROUP", "fields": [{ "fieldPath": "runId", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
     { "collectionGroup": "history", "queryScope": "COLLECTION_GROUP", "fields": [{ "fieldPath": "actor.uid", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
     { "collectionGroup": "history", "queryScope": "COLLECTION_GROUP", "fields": [{ "fieldPath": "actor.via", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
