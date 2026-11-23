@@ -188,7 +188,7 @@ export const Artist = entity({
   /** The payment app link the merch page opens with the amount filled in (Venmo for now). Private like signalGroupUrl: band-only, never in templates, emails, Bandsintown, calendar sync or the /ask pages. */
   paymentUrl: paymentUrl.optional(),
   /** Which fan modules are on. Missing = off. Off hides the nav items and the public pages. */
-  features: z.strictObject({ fans: z.boolean().optional(), merch: z.boolean().optional() }).optional(),
+  features: z.strictObject({ fans: z.boolean().optional(), merch: z.boolean().optional(), /** The Website page (docs/designs/sites); on once scripts/sites-create.ts made the site. */ sites: z.boolean().optional() }).optional(),
   /** The opt-in wording fans see on the public list page (saved with each signup). Missing = DEFAULT_LIST_WORDING. */
   listWording: z.string().optional(),
   /** The name the public fan page shows ("Ingrid Avison" for "Ingrid Avison Band"). Missing = name. */

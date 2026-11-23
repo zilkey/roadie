@@ -123,6 +123,8 @@ const EXPECTED = [
   // read tools and undo
   "search", "records.get", "records.list", "shows.list", "pitches.needingFollowUp", "songs.missingFiles", "availability.check", "stats.movement",
   "history.undoRun", "history.myRuns",
+  // the website's draft (docs/designs/sites): never publish, promote, rollback or settings
+  "site.status", "site.pages", "site.read", "site.versions", "site.write", "site.edit", "site.remove",
 ].sort();
 
 test("the tool list is exactly the registry commands allowed for MCP (the access table's MCP column)", () => {

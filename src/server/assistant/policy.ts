@@ -35,6 +35,8 @@ export const EXCLUDED: readonly string[] = [
   "venues.setCalendar",
   "acts.lookup", "acts.lookupShortlist", "acts.findTeam", // an act's Look up (#78): searches the web and Spotify on a click on the act page or Acts tab, never from chat
   "platform.",        // Roadie's own platform admin page: the artist list and suspending an artist, by a person's click only
+  // the website (docs/designs/sites): Roadie edits the draft; a person publishes, promotes, rolls back and changes the settings
+  "site.publish", "site.promote", "site.rollback", "site.reconcile", "site.settings.update", "site.preview",
   "dayOf.",           // hiding a row of the day-of banner (#66): the banner's own ×, personal to whoever taps it
 ];
 /** Under an excluded prefix but fine: adding a Band Member (a name on a roster) grants no sign-in or access, unlike the rest of users.*. */
@@ -103,7 +105,7 @@ export const BULK_LIMIT = 5;
 const ONE_RECORD_LISTS = new Set(["shows.setChecklists", "shows.setFields", "shows.setExpenses", "rehearsals.setExpenses", "checklistTemplates.create", "checklistTemplates.update", "checklistTemplates.reorder", "setlistTemplates.update", "setlistTemplates.create", "setlists.setItems", "setlists.seed", "artists.update", "rehearsals.create", "rehearsals.update", "rehearsals.importSetlist", "songs.create", "files.attach", "releases.create", "releases.tracks.add", "releases.tracks.update", "releases.tracks.reorder", "releases.files.attach", "releases.files.copyToFolder", "tours.create", "tours.update", "tours.addPitch", "posts.updateDraft", "shows.posters.attach", "stagePlots.updateInputs", "stagePlots.reorderInputs", "stagePlots.move", "stagePlots.addItems", "stagePlots.removeItems", "stagePlots.setMonitors"]);
 
 /** Reads never ask, whatever they are given. */
-const READ_ONLY = new Set(["checklistTemplates.list", "records.get", "records.list", "shows.list", "search", "availability.check", "stats.movement", "stats.current", "pitches.needingFollowUp", "songs.missingFiles", "receipts.search", "drive.search", "expenses.estimateGas", "geo.autocomplete", "people.list", "help.explain", "setlists.printLink", "setlists.printPrefs", "setlists.showTransitions", "stagePlots.list", "stagePlots.get", "stagePlots.staleShows", "stagePlots.engineerLink", "fans.list", "fans.counts", "fans.near", "fans.newSince", "fans.forBandzoogle", "shows.calendarPreview", "rehearsals.calendarPreview", "tours.list", "tours.get", "tours.summary", "posts.photos", "posts.list", "posts.get", "venueEvents.find"]);
+const READ_ONLY = new Set(["checklistTemplates.list", "records.get", "records.list", "shows.list", "search", "availability.check", "stats.movement", "stats.current", "pitches.needingFollowUp", "songs.missingFiles", "receipts.search", "drive.search", "expenses.estimateGas", "geo.autocomplete", "people.list", "help.explain", "setlists.printLink", "setlists.printPrefs", "setlists.showTransitions", "stagePlots.list", "stagePlots.get", "stagePlots.staleShows", "stagePlots.engineerLink", "fans.list", "fans.counts", "fans.near", "fans.newSince", "fans.forBandzoogle", "shows.calendarPreview", "rehearsals.calendarPreview", "tours.list", "tours.get", "tours.summary", "posts.photos", "posts.list", "posts.get", "venueEvents.find", "site.status", "site.pages", "site.read", "site.versions"]);
 
 /** Commands that only read. Everything else may write (the taint rule in tools.ts asks first for all of them). */
 export const isReadOnly = (name: string) => READ_ONLY.has(name);

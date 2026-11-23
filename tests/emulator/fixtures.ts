@@ -83,10 +83,18 @@ export const SAMPLES: Record<ArtistKind, Sample> = {
   mcpTokens: { id: (r) => `hash-${r.artistId}`, data: (r) => ({ userId: r.adminUid, label: "Claude Desktop" }) },
   shortcutTokens: { id: (r) => `short-${r.artistId}`, data: (r) => ({ userId: r.adminUid, artistId: r.artistId }) },
   invites: { data: (r) => ({ artistId: r.artistId, email: mail("invitee", r.artistId), name: "Ivy Invitee", role: "member", invitedBy: r.adminUid }) },
+  sites: { id: (r) => r.artistId, data: (r) => ({ artistId: r.artistId, name: "Sample site", hosting: { project: "demo", liveSite: `s-${r.artistId.toLowerCase()}`, stagingSite: `s-${r.artistId.toLowerCase()}-staging` }, nextN: 1, autoRefresh: true }) },
+  sitePages: { path: (r) => `sites/${r.artistId}/sitePages`, id: () => "page-index", data: () => ({ path: "index.html", kind: "page", body: "<h1>Hi</h1>" }) },
+  siteSources: { path: (r) => `sites/${r.artistId}/siteSources`, id: () => "src-index", data: () => ({ path: "index.html", kind: "page", body: "<h1>Hi</h1>" }) },
+  siteAssets: { path: (r) => `sites/${r.artistId}/siteAssets`, id: () => "asset-1", data: () => ({ type: "image/png", size: 3, data: new Uint8Array([1, 2, 3]) }) },
+  siteVersions: {
+    path: (r) => `sites/${r.artistId}/siteVersions`, id: () => "1",
+    data: (r) => ({ n: 1, site: "staging", state: "done", kind: "publish", sources: { "index.html": "src-index" }, blockInputs: "x", outputs: {}, hostingVersion: "sites/x/versions/v1", leaseToken: "t", by: r.adminUid, at: 1 }),
+  },
 };
 
 /** Parents first: the kinds a later sample points at. */
-const FIRST: ArtistKind[] = ["musicians", "projects", "contacts", "songs", "pitches", "shows", "tours", "releases", "rehearsals", "assistantThreads"];
+const FIRST: ArtistKind[] = ["musicians", "projects", "contacts", "songs", "pitches", "shows", "tours", "releases", "rehearsals", "assistantThreads", "sites"];
 export const SAMPLE_ORDER: ArtistKind[] = [...FIRST, ...ARTIST_KINDS.filter((k) => !FIRST.includes(k))];
 
 /** The shared directory records every artist's samples point at (one set, made once). */

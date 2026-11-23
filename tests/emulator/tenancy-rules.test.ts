@@ -27,7 +27,8 @@ let A: SeededArtist, B: SeededArtist, both: { uid: string };
 const [host, port] = (process.env.FIRESTORE_EMULATOR_HOST ?? "127.0.0.1:8280").split(":");
 
 /** Kinds with no client rule: the server reads them for the browser (invites through commands, tokens on the server). */
-const SERVER_ONLY = new Set(["invites", "shortcutTokens"]);
+/** Server only: no browser rule (the website is read and written through the site.* commands). */
+const SERVER_ONLY = new Set(["invites", "shortcutTokens", "sites", "sitePages", "siteSources", "siteAssets", "siteVersions"]);
 /** Kinds every member of the artist reads (live records). */
 const MEMBER_READS = new Set(["shows", "tours", "entries", "projects", "songs", "files", "setlists", "setlistTemplates", "rehearsals", "stagePlots", "musicians"]);
 /** Kinds a member reads only their own of (the samples are the admin's, so the member reads none of them). */

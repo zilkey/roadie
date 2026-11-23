@@ -27,6 +27,7 @@ import { pathOf } from "@/schema/owners";
 import { eventId } from "@/server/events/refresh";
 import { SEED_DATES } from "./seed-dates";
 import { fmtPitchDate } from "@/lib/booking";
+import { createSiteDoc, writeDraft } from "@/server/sites/store";
 
 const project = "demo-band-tracker";
 const fsHost = process.env.FIRESTORE_EMULATOR_HOST ?? "127.0.0.1:8280";
@@ -69,7 +70,7 @@ async function main() {
     demosFolderId: "fake-folder-demos",
     songwritingFolderId: "fake-folder-songwriting",
     calendar: { id: "fake-band-calendar", name: "Nora Quill Band" },
-    features: { fans: true },
+    features: { fans: true, sites: true },
   }, artistId);
 
   for (const p of DEV_PEOPLE) {
@@ -94,6 +95,20 @@ async function main() {
   // (platform admin: merges, removes, Admin › Platform). Fern Valley Trio's Olga is left unapproved: she sees "Ask to edit".
   await approveArtist(artist, "seed");
   await addPlatformAdmins([uid.rudy]);
+
+  // A starter website (docs/designs/sites), served by the in-memory fake Hosting in dev and e2e: Settings › Website.
+  await createSiteDoc(artist, "Nora Quill", { project: "demo", liveSite: "nora-quill", stagingSite: "nora-quill-staging" }, uid.rudy);
+  const siteCtx = { ...ctx, uid: uid.rudy, via: "app" as const };
+  const siteFiles: [string, "page" | "partial" | "css" | "config", string][] = [
+    ["index.html", "page", `<title>Nora Quill</title>\n<section class="hero"><h1>Nora Quill</h1><p>Folk songs from the Front Range.</p></section>\n<h2>Next shows</h2>\n<roadie-shows limit="3"></roadie-shows>`],
+    ["about.html", "page", `<title>About | Nora Quill</title>\n<h1>About</h1>\n<p>Nora Quill writes songs about weather and the people who wait it out.</p>`],
+    ["shows.html", "page", `<title>Shows | Nora Quill</title>\n<h1>Shows</h1>\n<roadie-shows limit="20"></roadie-shows>`],
+    ["partials/header.html", "partial", `<header class="top"><a href="/">Nora Quill</a><nav><a href="/about">About</a> <a href="/shows">Shows</a></nav></header>`],
+    ["partials/footer.html", "partial", `<footer class="bottom"><roadie-links></roadie-links><roadie-signup></roadie-signup></footer>`],
+    ["style.css", "css", `body{font-family:Lora,serif;margin:0;color:#222}.top,.bottom{display:flex;gap:1rem;justify-content:space-between;padding:1rem 2rem;background:#f4efe6}main{padding:1rem 2rem;max-width:760px;margin:0 auto}.roadie-shows{list-style:none;padding:0}.roadie-show{padding:.5rem 0;border-bottom:1px solid #eee}.roadie-links{display:flex;gap:1rem;list-style:none;padding:0}`],
+    ["site.json", "config", JSON.stringify({ title: "Nora Quill", description: "Folk songs from the Front Range.", fonts: ["Lora"], signupUrl: "https://list.example.com/nora" }, null, 2)],
+  ];
+  for (const [path, kind, body] of siteFiles) await writeDraft(siteCtx, { path, kind, body });
 
   // Driving settings for the admin (Rudy), so gas estimates work out of the box. The member gets none (no home, no car).
   await updateDriving(ctx, uid.rudy, {

@@ -35,6 +35,7 @@ export const ADMIN_LINKS = [
   { href: "/admin/checklists", label: "Checklist templates", testid: "admin-checklists" },
   { href: "/admin/mcp", label: "Integrations", testid: "admin-mcp" },
   { href: "/admin/history", label: "Activity", testid: "admin-history" },
+  { href: "/admin/website", label: "Website", testid: "admin-website" },
 ];
 
 const NAV_LINK = "inline-flex h-11 shrink-0 items-center whitespace-nowrap rounded-xl px-3.5 text-[0.9375rem] no-underline";

@@ -1,6 +1,50 @@
 # Sites: Roadie writes, previews and publishes artists' websites
 
-Status: design, not built. Issue: zilkey/roadie-issues#90. Canvas: https://claude.ai/artifact/D7uszAiyCLJbhgHBwPLCKE
+Status: phases 1–4 built (2026-11-23), cutover (phase 5) not started. Issue: zilkey/roadie-issues#90. Canvas: https://claude.ai/artifact/D7uszAiyCLJbhgHBwPLCKE
+
+## What's built, and where it differs from the design
+
+Built: the schema and storage (`src/schema/sites.ts`, `src/server/sites/store.ts`), the sanitizer and `render()`, the Hosting
+client with an in-memory fake (`src/server/integrations/hosting.ts`), `buildVersion` / `releaseVersion` / `reconcile`
+(`src/server/sites/publish.ts`), the three blocks, the 10-minute refresh (`src/server/sites/refresh.ts`,
+`/api/cron/site-refresh`, `.github/workflows/site-refresh.yml`), the `site.*` commands, Roadie's draft tools (the `website`
+tool group), and Settings › Website (preview, page picker, Draft / Staging / Live, Desktop / Phone, Publish, Promote, History,
+Roll back). `scripts/sites.ts` creates a site, imports a folder of files, publishes and promotes.
+
+Taken differently, for now:
+
+- **Project.** Sites are served from Firebase Hosting in `roadie-prod-iab` (`SITES_HOSTING_PROJECT` in `apphosting.yaml`), not
+  a separate `roadie-sites` project, because the service-account key can't create projects or link billing. Hosting is still a
+  separate product from App Hosting, so an app outage leaves sites up. Moving to `roadie-sites` later is a new pair of Hosting
+  sites plus one publish.
+- **Images live in Firestore** (`siteAssets/{sha256}`, at most ~950 KB each, resized to 2000 px by the import script), not
+  Firebase Storage. No Storage setup, rules or emulator were needed. `site.uploadImage` isn't built: images come in through
+  `scripts/sites.ts import`.
+- **No mirror bucket or standby yet** (Redundancy). Viewing a published version renders it from its frozen sources instead of
+  reading a mirror prefix (`site.preview` with `n`).
+- **The fake Hosting API is in process** (globalThis), not an HTTP server under `fakes/`.
+- **Publish runs through the normal command route**, not a separate `/api/sites/release` with a 300-second limit. Only the first
+  publish of a site uploads much, and that one ran from the script.
+- **Website is under Settings** (`/admin/website`, shown when `artists.features.sites` is on), not a main-nav section.
+- **No domains screen** (phase 5): `ingridavison.com` still points at Bandzoogle.
+
+## What it costs
+
+Measured on Ingrid's site: 9 pages, 19 images, about 7 MB per version, of which only changed files upload.
+
+| Part | Free allowance | Ingrid's use | Per month |
+| --- | --- | --- | --- |
+| Firebase Hosting storage | 10 GB | well under 1 GB, even with 100 retained versions per site | $0 |
+| Firebase Hosting transfer | 360 MB a day (~10 GB a month), then $0.15/GB | a visit with the heavy photos is ~2–3 MB, so ~4,000 visits a month fit | $0 (about $0.15 per 1,000 extra visits) |
+| Custom domain + certificate | free | | $0 |
+| Firestore (drafts, sources, versions, images) | 1 GiB stored, 50k reads/day | ~10 MB stored; the refresh reads ~1,500 docs a day | $0 |
+| App Hosting (the refresh every 10 minutes) | Cloud Run's free tier | 144 short calls a day | $0 |
+| GitHub Actions (the refresh schedule) | public repo | | $0 |
+| Roadie chat edits (Claude Sonnet 5.5) | | roughly $0.05–0.30 per edit request (the tool list is ~100k tokens, mostly cache reads at $0.10/M) | a few dollars at most |
+| Cold standby (not built) | | | $0; hot would be ~$18 |
+
+So for one artist: about **$0 a month for hosting**, plus whatever chat edits cost, well under $5 a month; **$0–60 a year**.
+The domain (registered at Squarespace) and the email-list provider are separate, and both are Ingrid's whatever hosts the site.
 
 ## Goal
 

@@ -40,6 +40,7 @@ import { McpTokenInput } from "./mcpTokens";
 import { ShortcutTokenInput } from "./shortcutTokens";
 import { InviteInput } from "./invites";
 import { AssistantThread } from "./assistant";
+import { SiteInput, SitePageInput, SiteSourceInput, SiteAssetInput, SiteVersionInput } from "./sites";
 import { artistIdsOf } from "./users";
 import { e164, lowerEmail, matchKeyFor } from "./normalize";
 
@@ -90,6 +91,7 @@ export * from "./mcpTokens";
 export * from "./shortcutTokens";
 export * from "./invites";
 export * from "./owners";
+export * from "./sites";
 
 export interface CollectionDef {
   /** Validates the writable fields (no server-stamped ones). */
@@ -158,6 +160,12 @@ export const collections: Record<string, CollectionDef> = {
   invites: { input: InviteInput },
   /** Roadie's conversations: written raw by src/server/assistant/threads.ts (not history), registered for their schema and owner. */
   assistantThreads: { input: AssistantThread },
+  /** Artists' websites (docs/designs/sites): only the draft (sitePages) goes through the Writer; the rest is written raw by src/server/sites/store.ts. */
+  sites: { input: SiteInput },
+  sitePages: { input: SitePageInput },
+  siteSources: { input: SiteSourceInput, immutable: true },
+  siteAssets: { input: SiteAssetInput, immutable: true },
+  siteVersions: { input: SiteVersionInput },
 };
 
 /** "pitches/abc/comments" -> "comments"; "venues" -> "venues". */

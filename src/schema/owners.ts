@@ -22,6 +22,7 @@ export const OWNERS = {
   checklistTemplates: "artist", posts: "artist", todos: "artist", fans: "artist", emailThreads: "artist", venueNotes: "artist",
   venueEventNotes: "artist", actNotes: "artist", festivalNotes: "artist", editionNotes: "artist", promoterNotes: "artist",
   contactNotes: "artist", socialChecklists: "artist", mcpTokens: "artist", shortcutTokens: "artist", assistantThreads: "artist",
+  sites: "artist", sitePages: "artist", siteSources: "artist", siteAssets: "artist", siteVersions: "artist",
   // the artist's own doc
   artists: "artist-self",
   // shared directory
@@ -56,6 +57,10 @@ export const PARENTS: Record<string, { kinds: readonly string[]; keyedById?: tru
   private: { kinds: ["users"] },
   showDeals: { kinds: ["shows"], keyedById: true },
   setlists: { kinds: ["shows"], keyedById: true },
+  sitePages: { kinds: ["sites"] },
+  siteSources: { kinds: ["sites"] },
+  siteAssets: { kinds: ["sites"] },
+  siteVersions: { kinds: ["sites"] },
 };
 
 /**

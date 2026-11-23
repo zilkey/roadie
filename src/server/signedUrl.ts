@@ -15,7 +15,8 @@ import { AppError } from "./errors";
 import { db, type Doc } from "./db";
 import { systemCtx } from "./ctx";
 
-export type SignedScope = "thumb" | "media";
+/** siteImg: a website image in the Website page's preview frame (id = the image's sha256, v = "0"). */
+export type SignedScope = "thumb" | "media" | "siteImg";
 const HOUR = 60 * 60_000;
 const DEV_KEY = "roadie-dev-signed-url-key";
 

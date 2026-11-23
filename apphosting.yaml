@@ -26,6 +26,11 @@ env:
   # .github/workflows/venue-calendars.yml on main, by its GitHub OIDC token. Not a secret.
   - variable: CRON_GITHUB_REPO
     value: zilkey/roadie
+  # Artists' websites (docs/designs/sites): the Firebase Hosting project their sites are served from. roadie-prod-iab for now
+  # (Hosting is a separate product from App Hosting, so an app outage doesn't take sites down); roadie-sites later. Unset = the
+  # in-memory fake. The backend's service account needs Firebase Hosting Admin on that project.
+  - variable: SITES_HOSTING_PROJECT
+    value: roadie-prod-iab
   # Roadie on Vertex AI with the backend's service account (needs the Vertex AI User role); no API key.
   - variable: ROADIE_MODEL
     value: vertex

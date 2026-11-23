@@ -87,6 +87,7 @@ const RAW_ALLOWED: Record<string, string> = {
   "src/server/google/band.ts": "artistDoc(id): the artist's own doc by the id from the caller's ctx",
   "src/server/backup.ts": "whole-database backup and restore",
   "src/server/fans.ts": "deleteFan's hard delete (recursiveDelete), after the scoped get found the fan in this artist",
+  "src/server/sites/store.ts": "SiteStore: the site doc, sources, images and versions, written raw (never undone) under the ctx's own artist via pathOf; listAllSiteArtists for the refresh job",
   "src/server/commands/platform.ts": "Admin › Platform's list of every artist and Suspend: platform admins only (requirePlatformAdmin)",
 };
 
@@ -160,6 +161,8 @@ const ROUTES: Record<string, string> = {
   "session": "no artist (system view)", "sign-up": "no artist (PersonCtx; closed until phase 9)",
   "invites/[id]/[action]": "no artist: authenticatePerson builds a PersonCtx; the invite names the artist",
   "dev-people": "emulator only", "version": "none: the build id",
+  "sites/img/[artistId]/[sha]": "the HMAC's artistId (siteImg scope)",
+  "cron/site-refresh": "none: every site, by its own artistId (importCtx per site); only the site-refresh GitHub workflow (OIDC)",
   "cron/venue-calendars": "none: the shared venue directory, as the system job; only the venue-calendars GitHub workflow (OIDC)",
 };
 

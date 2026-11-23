@@ -32,6 +32,7 @@ import type { AssistantAction, AssistantEvent, ToolTrace } from "../src/schema/a
 import { answerPending } from "../src/server/assistant/confirm";
 import { loadHistory, saveTurn } from "../src/server/assistant/threads";
 import { upsertEvents } from "../src/server/events/refresh";
+import { createSiteDoc, writeDraft } from "../src/server/sites/store";
 import { checkRecorded, describe, POST_SHOW, recorded, seedWorld, type PostShowScenario, type ShowKey } from "./roadie-post-show";
 
 interface Check { calls?: RegExp[]; noCalls?: RegExp[]; cards?: number; text?: RegExp; noText?: RegExp; noAsk?: boolean; args?: [RegExp, RegExp][]; noArgs?: [RegExp, RegExp][]; cardVoice?: boolean; cardText?: RegExp }
@@ -109,6 +110,9 @@ const SCENARIOS: Scenario[] = [
   // #78: acts aren't in search, so the first lookup is acts.find; and a relationship or a note writes only that (in #77's run Roadie also shortlisted Wheelwright).
   { name: "acts-shortlist", turns: [{ say: "shortlist North Fork Crossing", calls: [/acts\.find/, /acts\.shortlist/], noCalls: [/^search$/], args: [[/acts\.shortlist/, /"on":true/]], noText: REFUSES }] },
   { name: "acts-watch", turns: [{ say: "watch Wheelwright", calls: [/acts\.find/, /acts\.shortlist/], noCalls: [/^search$/], args: [[/acts\.shortlist/, /"on":true/]], noText: REFUSES }] },
+  // The website (docs/designs/sites): Roadie edits the draft; a person publishes.
+  { name: "site-bio-shorter", route: "/admin/website", turns: [{ say: "make the bio on the about page shorter", calls: [/site\.read/, /site\.(edit|write)/], noCalls: [/site\.publish/], args: [[/site\.(edit|write)/, /about\.html/]], noText: REFUSES }] },
+  { name: "site-shows-home", route: "/admin/website", turns: [{ say: "put the next three shows on the home page of the website", calls: [/site\.(edit|write)/], args: [[/site\.(edit|write)/, /roadie-shows[^>]*limit=\\?"3/]], noText: REFUSES }] },
   { name: "acts-note", turns: [{ say: "Wheelwright is bigger than us, we'd love to open for them", calls: [/acts\.find/, /acts\.note/], noCalls: [/acts\.shortlist/, /^search$/], args: [[/acts\.note/, /"relationship":"openFor"/]], noArgs: [[/acts\.note/, /"note":"[^"]/]], noText: REFUSES }] },
   { name: "acts-note-text", turns: [{ say: "add a note on the act Morrow Morrow: great harmonies, super friendly crew", calls: [/acts\.find/, /acts\.note/], noCalls: [/acts\.shortlist/, /^search$/], args: [[/acts\.note/, /"note":"[^"]*harmonies/i]], noArgs: [[/acts\.note/, /"relationship"/]], noText: REFUSES }] },
   // #79: the band's own genres (General Settings) feed the opener guess's genre fit
@@ -175,6 +179,15 @@ async function seedActs(artistId: string) {
   await upsertEvents(bluebird.id, "ics", [ev(12, [["Wheelwright", "headliner"], ["North Fork Crossing", "support"]]), ev(30, [["Morrow Morrow", "headliner"]])], now, "America/Denver");
 }
 
+/** A small website draft for the site-* scenarios. */
+async function seedSite(artistId: string, uid: string) {
+  await createSiteDoc(artistId, "Eval band", { project: "demo", liveSite: `${artistId}-site`, stagingSite: `${artistId}-site-staging` }, uid);
+  const ctx = { ...importCtx(artistId, uid), via: "app" as const };
+  await writeDraft(ctx, { path: "index.html", kind: "page", body: "<title>Eval band</title>\n<h1>Eval band</h1>\n<p>Songs from the plains.</p>" });
+  await writeDraft(ctx, { path: "about.html", kind: "page", body: "<title>About</title>\n<h1>About</h1>\n<p>Eval band started in a garage in Lyons in 2019, when three friends who had all quit other bands decided to try one more time. They played every open mic between Boulder and Fort Collins for two years, recorded a first EP in a cabin with one microphone, and slowly built a following of people who like long songs about weather, trucks and leaving home. Their second record came out in 2024 and they now tour the Front Range most weekends.</p>" });
+  await writeDraft(ctx, { path: "shows.html", kind: "page", body: "<title>Shows</title>\n<h1>Shows</h1>\n<roadie-shows limit=\"20\"></roadie-shows>" });
+}
+
 async function band() {
   const slug = `eval-${Date.now().toString(36)}`;
   const artist = await db.create(systemCtx("roadie-eval"), "artists", { slug, name: `Eval band ${slug}`, driveFolderId: "", links: {}, configurations: [], timeZone: TZ }, { id: slug });
@@ -188,6 +201,7 @@ async function band() {
   await seedSongs(artist.id);
   await seedVoice(artist.id);
   await seedActs(artist.id);
+  await seedSite(artist.id, u.uid);
   return { uid: u.uid, artistId: artist.id };
 }
 

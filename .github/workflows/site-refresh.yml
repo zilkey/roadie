@@ -1,0 +1,30 @@
+# Website refresh (docs/designs/sites, Decision 5). Every 10 minutes, /api/cron/site-refresh reconciles every artist's site with
+# Firebase Hosting and re-renders a site whose show list or links changed. No secrets: the route checks this workflow's GitHub
+# OIDC token (repo, main, this file). Run it by hand from the Actions tab (workflow_dispatch) any time.
+name: Site refresh
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  id-token: write # GitHub's OIDC token for the route
+  contents: read
+
+concurrency:
+  group: site-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Refresh the sites
+        env:
+          URL: https://app.myroadie.online/api/cron/site-refresh
+        run: |
+          token=$(curl -sSf -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$URL" | jq -r .value)
+          curl -sS --fail-with-body --max-time 240 -X POST -H "Authorization: Bearer $token" "$URL"
+          echo

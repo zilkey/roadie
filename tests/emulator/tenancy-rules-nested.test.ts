@@ -73,7 +73,8 @@ after(async () => { await env?.cleanup(); });
 
 test("the test covers every kind that moves and has a browser rule", () => {
   const moving = Object.keys(OWNERS).filter(movesUnderArtist);
-  const covered = new Set([...BAND, ...OWN, ...ADMIN, "comments", "entries", "activity", "tracks"]);
+  // The website kinds have no browser rule: the site.* commands read and write them.
+  const covered = new Set([...BAND, ...OWN, ...ADMIN, "comments", "entries", "activity", "tracks", "sites", "sitePages", "siteSources", "siteAssets", "siteVersions"]);
   assert.deepEqual(moving.filter((k) => !covered.has(k)), []);
 });
 

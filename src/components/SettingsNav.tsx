@@ -26,7 +26,7 @@ export function SettingsNav() {
   const on = (href: string) => path === full(href) || path.startsWith(full(href) + "/");
   return (
     <nav aria-label="Artist settings" data-testid="settings-nav" className="flex-[1_1_220px] self-start rounded-lg border border-border bg-surface p-2">
-      {GROUPS.map((g) => ({ ...g, items: [...g.items, ...(g.head === "Admin" && platformAdmin ? [{ key: "platform", href: "/admin/platform", label: "Platform" }] : [])] })).map((g) => (
+      {GROUPS.map((g) => ({ ...g, items: [...g.items, ...(g.head === "Artist settings" && doc?.features?.sites ? [{ key: "website", href: "/admin/website", label: "Website" }] : []), ...(g.head === "Admin" && platformAdmin ? [{ key: "platform", href: "/admin/platform", label: "Platform" }] : [])] })).map((g) => (
         <div key={g.head}>
           <div className={HEAD}>{g.head}</div>
           {g.items.map((i) => (
