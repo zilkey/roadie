@@ -65,6 +65,12 @@ describe("splitTitle (prod titles)", () => {
   test("very special guest is a named support act", () => {
     assert.deepEqual(roles("Trace Bundy 18th Annual Acoustic Holiday With very special guest Andy McKee"), ["Trace Bundy:headliner", "Andy McKee:support"]);
   });
+  test("a venue's presents before an evening with", () => {
+    assert.deepEqual(roles("eTown Presents an evening with May Erlewine"), ["May Erlewine:headliner"]);
+  });
+  test("an annual show's name is not an act; its first guest headlines", () => {
+    assert.deepEqual(roles("eTown Presents the 6th Annual Winter's Eve Holiday Show with Megan Burtt and Sturtz"), ["Megan Burtt and Sturtz:headliner"]);
+  });
   test("musical guest", () => {
     assert.deepEqual(roles("Hazlett with musical guest lighthearted"), ["Hazlett:headliner", "lighthearted:support"]);
   });

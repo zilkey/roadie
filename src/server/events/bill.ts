@@ -16,6 +16,8 @@ const TBA = /\b(?:special\s+guests?|support(?:ing acts?)?\s*(?::\s*)?(?:tba|tbd|
 const GUEST = /(?:\s+(?:with|w\/|\+|&|and|plus)\s*|\s+|^)(?:very\s+)?(?:special|musical)\s+guests?\s*:?\s+(?!(?:tba|tbd|to be announced|and|&|more|\+|to)\b)(?=[\p{L}\p{N}])/iu;
 /** "Trace Bundy 18th Annual Acoustic Holiday": the event's name after the act. */
 const ANNUAL = /^(\S+(?:\s+\S+)+?)\s+\d+(?:st|nd|rd|th)\s+annual\b.*$/i;
+/** "the 6th Annual Winter's Eve Holiday Show": an event's name with no act before it. */
+const EVENT_NAME = /^(?:the\s+)?\d+(?:st|nd|rd|th)\s+annual\b/i;
 /** "Deer Creek Sharpshooters (11/27) and Tonewood (11/28)": one act per night of a run. */
 const PER_NIGHT = /\s*\(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?\)\s*(?:,|and|&|\+)?\s*/i;
 
@@ -50,12 +52,14 @@ export function splitTitle(raw: string): Bill {
   // lighthearted": a named guest is a support act, not a TBA.
   let t = cleanTitle(raw).replace(GUEST, " with ").replace(/^\s*with\s+/i, "");
   const supportTba = TBA.test(t);
-  t = t.replace(CANCELLED, " ").trim().replace(LEAD_DATE, "").replace(PREFIX, "").replace(/^[\s*•·]+/, "");
+  t = t.replace(CANCELLED, " ").trim().replace(LEAD_DATE, "").replace(PREFIX, "").replace(PREFIX, "").replace(/^[\s*•·]+/, "");
   for (const re of TAIL) t = t.replace(re, " ");
   t = t.replace(/\b(?:with\s+)?special\s+guests?\b.*$/i, "").replace(TBA, "").trim();
   const at = WITH.exec(t);
   // "Trace Bundy 18th Annual Acoustic Holiday With …": the act before the event's name, only when a guest follows.
-  const head = at ? tidy(t.slice(0, at.index)).replace(ANNUAL, "$1") : tidy(t);
+  const head0 = at ? tidy(t.slice(0, at.index)).replace(ANNUAL, "$1") : tidy(t);
+  // "the 6th Annual Winter's Eve Holiday Show with Megan Burtt": the show's name isn't an act; the first guest headlines.
+  const head = at && EVENT_NAME.test(head0) ? "" : head0;
   const rest = at ? t.slice(at.index + at[0].length) : "";
   const acts: Act[] = [];
   const seen = new Set<string>();
@@ -69,9 +73,10 @@ export function splitTitle(raw: string): Bill {
   const coBill = !at && LIST.test(head) && head.split(LIST).length > 1;
   if (coBill) head.split(LIST).forEach((n, i) => add(n, i === 0 ? "headliner" : "support"));
   else add(head, "headliner");
+  const role = (): Act["role"] => (acts.length ? "support" : "headliner");
   for (const n of rest.split(new RegExp(`${LIST.source}|${WITH.source}`, "i"))) {
-    if (PER_NIGHT.test(n)) n.split(PER_NIGHT).forEach((x) => add(x, "support"));
-    else add(n, "support");
+    if (PER_NIGHT.test(n)) n.split(PER_NIGHT).forEach((x) => add(x, role()));
+    else add(n, role());
   }
   return { acts, supportTba };
 }
