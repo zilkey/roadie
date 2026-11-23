@@ -8,7 +8,7 @@ export default function Privacy() {
     <main className="legal band">
       <article className="col">
         <h1>Privacy policy</h1>
-        <p className="eff">Effective October 26, 2026</p>
+        <p className="eff">Effective November 23, 2026</p>
         <p className="intro">Roadie is a free, open-source app for the business side of a band. It&apos;s run by Jeff Dean. This page explains what Roadie stores, who can see it, and how to have it removed. Questions go to <a href="mailto:jeff@zilkey.com">jeff@zilkey.com</a>.</p>
 
         <h2>What Roadie collects</h2>
@@ -60,7 +60,7 @@ export default function Privacy() {
         <h2>Keeping and deleting</h2>
         <ul>
           <li>Your band&apos;s data is kept while your band uses Roadie. Things you delete in the app are hidden first so they can be undone.</li>
-          <li>To get a copy of your data, or to have your account or your band&apos;s data deleted for good, email <a href="mailto:jeff@zilkey.com">jeff@zilkey.com</a>. Deletion is done within 30 days; backups that still hold it are replaced over time.</li>
+          <li>To get a copy of your data, or to have your account or your band&apos;s data deleted for good, email <a href="mailto:jeff@zilkey.com">jeff@zilkey.com</a>. Deletion is done within 30 days, and every backup that still holds it is deleted within 30 days after that.</li>
           <li>Fans can ask the band, or email the address above, to be taken off a band&apos;s list.</li>
         </ul>
 

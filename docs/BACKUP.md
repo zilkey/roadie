@@ -3,18 +3,37 @@
 ## What a backup is
 `npm run backup -- --out backups` (or `tsx scripts/backup.ts`) writes `backups/YYYY-MM-DD/<collection>.json` (today's UTC date; `--date 2026-10-23` names it yourself), one file per top-level collection, with every document including sub-collections (`pitches/{id}/activity`, `comments`) and soft-deleted ones, plus `_manifest.json` with counts. Once artist data is nested (tenancy phase 10, `platform/config.nestedPaths`), every artist record is a sub-collection row of `artists.json` (`artists/{id}/shows/{showId}`); restore validates each as the record it is. A backup from either layout restores as it was: after restoring a top-level one onto a nested setup, run `scripts/migrate-nested.ts --apply` (and a nested one onto a top-level setup, `--reverse --apply`). A backup from before phase 7 carries `users.musicianId`; restore moves it onto the person's membership in memory. Each row is `{path, data}`; Firestore timestamps are `{"__ts": {seconds, nanoseconds}}`. Auth accounts are not included (people sign in with Google again and `/api/session` re-sets the role from the `users` document).
 
-## Nightly job (`.github/workflows/backup.yml`)
-Runs at 09:17 UTC every day (and on demand from the Actions tab), dumps the real Firestore and commits the result to a **private** backup repo. It has never been run; set up once:
-1. Create a private repo, for example `your-org/roadie-backups`.
-2. In the Google Cloud project create a service account with role **Cloud Datastore Viewer** (read-only Firestore). Download a JSON key.
-3. In the app repo (Settings > Secrets and variables > Actions):
-   - secret `FIREBASE_SERVICE_ACCOUNT`: the whole JSON key
-   - secret `BACKUP_REPO_TOKEN`: a fine-grained personal access token limited to the backup repo with Contents: read and write
-   - variable `BACKUP_REPO`: `your-org/roadie-backups`
-4. Edit `GCLOUD_PROJECT` in the workflow if the project id is not `roadie-prod-iab`.
-5. Run "Nightly backup" once by hand and check the commit appears.
+## Nightly backups: Firestore's own
+Production is backed up by Firestore itself (managed backups), not by a job of ours. Two schedules on the `(default)`
+database: **daily, kept 7 days** and **weekly on Tuesday, kept 4 weeks**. They live in the project and expire by
+themselves. `npm run deploy:firestore` sets them (`BACKUP_SCHEDULES` in `scripts/deploy-firestore.ts`): it creates or
+fixes the schedules and deletes any older backup that would outlive 30 days, once a backup under these rules is ready.
+Its service account needs **Cloud Datastore Backup Schedules Admin** and **Cloud Datastore Backups Admin**; it says so if
+either is missing.
 
-Each day adds a dated folder; git history gives you the rest. The service account key is written to the runner's temp dir and deleted at the end.
+List them: `gcloud firestore backups list --project=roadie-prod-iab`. A managed backup restores into a **new**
+database, never over the live one:
+```
+gcloud firestore databases restore --project=roadie-prod-iab \
+  --source-backup=projects/roadie-prod-iab/locations/nam5/backups/<id> --destination-database=restore-<date>
+```
+Then compare or copy what you need from `restore-<date>`, and delete that database when done. To load production
+into the local emulator use the JSON dump below (`npm run backup`, the `local-backup` skill), which `npm run restore`
+reads.
+
+Until 2026-11-23 a GitHub workflow (`backup.yml`) was meant to commit a JSON dump to a private repo every night. It
+never ran (the repo had no secrets) and was removed: git history keeps every dump forever, which breaks the promise
+below.
+
+## Deleted accounts (the 30-day promise)
+The privacy page promises that someone's data is deleted within 30 days of their asking, and gone from every backup
+within 30 days after that. So nothing that holds real data may be kept longer than 30 days:
+
+- **Firestore's backups**: no schedule keeps a backup longer than 30 days (above).
+- **JSON dumps of production** (`backups/` on a developer's machine): `npm run backup` against real Firestore deletes
+  the dated folders in its `--out` folder older than 30 days (`scripts/backup-prune.ts`). That includes the
+  folders `wipe` writes. Don't copy a dump anywhere else that keeps it longer (a git repo, a Drive folder).
+- Point-in-time recovery is off. If it is turned on, it keeps 7 days, which is inside the window.
 
 ## Restore
 ```

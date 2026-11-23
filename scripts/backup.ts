@@ -2,12 +2,15 @@
  * Dump every collection (sub-collections included) to <out>/<YYYY-MM-DD>/<collection>.json.
  *   tsx scripts/backup.ts [--out backups] [--date 2026-10-23]
  * Against the emulator when FIRESTORE_EMULATOR_HOST is set; otherwise real Firestore using
- * GOOGLE_APPLICATION_CREDENTIALS and GCLOUD_PROJECT (see .github/workflows/backup.yml and docs/BACKUP.md).
+ * GOOGLE_APPLICATION_CREDENTIALS and GCLOUD_PROJECT (see docs/BACKUP.md).
+ * A backup of real Firestore also deletes the folders in <out> older than BACKUP_KEEP_DAYS: a dump holds people who
+ * have since deleted their account, and the privacy page promises backups let go of them within 30 days.
  */
 import fs from "node:fs";
 import path from "node:path";
 import { firestore } from "@/server/admin";
 import { dumpAll } from "@/server/backup";
+import { BACKUP_KEEP_DAYS, pruneBackups } from "./backup-prune";
 
 const arg = (name: string, d: string) => { const i = process.argv.indexOf(`--${name}`); return i > 0 ? process.argv[i + 1] : d; };
 
@@ -35,8 +38,15 @@ function progress() {
 }
 
 if (process.argv[1]?.endsWith("backup.ts")) {
-  backup(arg("out", "backups"), arg("date", new Date().toISOString().slice(0, 10)), progress()).then(
-    ({ dir, counts }) => { console.log(`Backed up to ${dir}`, counts); },
+  const out = arg("out", "backups");
+  backup(out, arg("date", new Date().toISOString().slice(0, 10)), progress()).then(
+    ({ dir, counts }) => {
+      console.log(`Backed up to ${dir}`, counts);
+      if (!process.env.FIRESTORE_EMULATOR_HOST) {
+        const gone = pruneBackups(out);
+        if (gone.length) console.log(`Deleted ${gone.length} backup folder(s) older than ${BACKUP_KEEP_DAYS} days: ${gone.join(", ")}`);
+      }
+    },
     (e) => { console.error(e); process.exit(1); },
   );
 }

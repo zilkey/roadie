@@ -49,7 +49,7 @@ fakes/fake-<svc>/server.ts  tiny HTTP servers; state in .fake-data/<svc>.json (g
 fakes/run-all.ts            starts all fakes
 mcp/server.ts               MCP server reusing the command registry
 scripts/seed.ts             seeds emulator with realistic demo data
-scripts/backup.ts           dumps all collections to JSON (used by .github/workflows/backup.yml)
+scripts/backup.ts           dumps all collections to JSON (local copies of prod; see docs/BACKUP.md)
 firestore.rules             reads per access table; ALL client writes denied
 tests/unit/*.test.ts        node:test, no emulator (never touches Firestore or Auth)
 tests/emulator/*.test.ts    node:test against the Firestore/Auth test emulators, one Firebase project per file

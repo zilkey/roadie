@@ -141,13 +141,12 @@ The id `demo-band-tracker` is correct for local work and tests and should stay i
 - [ ] `src/server/admin.ts`: the fallback project id `demo-band-tracker` (only used when no env is set; production sets `GCLOUD_PROJECT`).
 - [ ] `src/lib/firebase-client.ts`: fallbacks `demo-key`, `demo-band-tracker.firebaseapp.com`, `demo-band-tracker`, `demo-app` (production sets `NEXT_PUBLIC_FIREBASE_*`; consider throwing instead when missing in production).
 - [ ] `mcp/env.ts`: defaults to the demo emulator only when no real `GCLOUD_PROJECT` / credentials are set; nothing to change, but check the MCP host sets `GCLOUD_PROJECT=roadie-prod-iab`.
-- [ ] `.github/workflows/backup.yml`: already `GCLOUD_PROJECT: roadie-prod-iab`.
 - [ ] Leave as is (local/test only): `.env.development`, `package.json` scripts (`emulators`, `seed`, `test`, `test:unit`, `test:emulator`, `e2e`, `test:all`, `stats:pull`), `playwright.config.ts`, `scripts/dev-all.ts`, `scripts/seed.ts`, `tests/emulator/helpers.ts`, `tests/emulator/rules.test.ts`, `PLAN.md`. Never run `npm run seed` against the real project.
 
 ## 10. Scheduled jobs
 
-- [ ] **Daily Spotify pull (CODE NEEDED for the schedule):** `scripts/stats-pull.ts` exists but is hard-wired to the emulator in `npm run stats:pull`, and no schedule exists. Either add a GitHub Actions cron (like `backup.yml`) that runs it with `GCLOUD_PROJECT=roadie-prod-iab`, the service-account secret and the Spotify secrets, or a Cloud Scheduler job calling a small authenticated route that runs the `stats.pull` command. Charts only start filling from the first run.
-- [ ] **Backup workflow** (`.github/workflows/backup.yml`, never run): create a private repo for backups; create a service account with **Cloud Datastore Viewer** and a JSON key; add Actions secrets `FIREBASE_SERVICE_ACCOUNT` (the key JSON) and `BACKUP_REPO_TOKEN` (fine-grained PAT, Contents read/write on the backup repo only) and variable `BACKUP_REPO` (`owner/repo`). Run "Nightly backup" once by hand and check the commit. Details and restore in `docs/BACKUP.md`.
+- [ ] **Daily Spotify pull (CODE NEEDED for the schedule):** `scripts/stats-pull.ts` exists but is hard-wired to the emulator in `npm run stats:pull`, and no schedule exists. Either add a GitHub Actions cron that runs it with `GCLOUD_PROJECT=roadie-prod-iab`, the service-account secret and the Spotify secrets, or a Cloud Scheduler job calling a small authenticated route that runs the `stats.pull` command. Charts only start filling from the first run.
+- [x] **Backups**: Firestore's own backup schedules (daily kept 7 days, weekly kept 4 weeks), set by `npm run deploy:firestore`. See `docs/BACKUP.md`.
 
 ## 11. MCP hosting and tokens
 

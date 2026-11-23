@@ -7,7 +7,7 @@ A small web app (phone and desktop) for one working band, the Nora Quill Band in
 - **Home**: decides what you need right now (today's show, who-can-play questions, last night's money, to-dos).
 - **Songs**: songs, Drive files with a sharing check, setlists with total time, rehearsals.
 - **Money**: append-only ledger, expenses, owed-per-person, settle a show, "My money" for members. **Stats**: Spotify numbers and charts.
-- **Safety net**: every write is recorded in History and a whole run can be undone; an MCP server lets Claude work on the data (it can draft, never send, email); nightly backup.
+- **Safety net**: every write is recorded in History and a whole run can be undone; an MCP server lets Claude work on the data (it can draft, never send, email); nightly Firestore backups that expire within 30 days.
 
 All times and "today" are America/Denver (`src/lib/timezone.ts`).
 

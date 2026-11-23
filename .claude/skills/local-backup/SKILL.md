@@ -24,6 +24,9 @@ GCLOUD_PROJECT=roadie-prod-iab npm run backup -- --out backups
 Writes `backups/YYYY-MM-DD/<collection>.json` plus `_manifest.json` (UTC date; a second run the same day
 overwrites that folder, so pass `--date <label>` to keep both). Check `_manifest.json` says
 `"project": "roadie-prod-iab"` and print the counts.
+It also deletes the dated folders in `backups/` older than 30 days and prints which: dumps hold people who have
+since deleted their account, and the privacy page promises they are gone from every backup within 30 days. Keep a
+dump of production nowhere else (docs/BACKUP.md, "Deleted accounts").
 
 ## 2. Load a backup into the emulator
 

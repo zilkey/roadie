@@ -5,7 +5,9 @@
  *
  * The key: GOOGLE_CREDENTIALS_JSON (cloud sessions) or .secrets/roadie-prod-iab-firebase-adminsdk-*.json (local).
  * It checks the account's permissions first. If any is missing it says exactly what to grant and deploys nothing.
- * After the deploy it lists the TTL policies and their state.
+ * After the deploy it lists the TTL policies and their state, and sets Firestore's own backups to BACKUP_SCHEDULES:
+ * no backup outlives 30 days, so an account someone deleted is gone from every backup within 30 days (the privacy page's
+ * promise; docs/BACKUP.md). Older backups from a longer schedule are deleted once a backup under these rules exists.
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -22,7 +24,74 @@ const NEEDS: { permission: string; role: string; title: string }[] = [
   { permission: "firebaserules.releases.update", role: "roles/firebaserules.admin", title: "Firebase Rules Admin" },
   { permission: "datastore.indexes.update", role: "roles/datastore.indexAdmin", title: "Cloud Datastore Index Admin" },
   { permission: "datastore.indexes.list", role: "roles/datastore.indexAdmin", title: "Cloud Datastore Index Admin" },
+  { permission: "datastore.backupSchedules.list", role: "roles/datastore.backupSchedulesAdmin", title: "Cloud Datastore Backup Schedules Admin" },
+  { permission: "datastore.backupSchedules.create", role: "roles/datastore.backupSchedulesAdmin", title: "Cloud Datastore Backup Schedules Admin" },
+  { permission: "datastore.backupSchedules.update", role: "roles/datastore.backupSchedulesAdmin", title: "Cloud Datastore Backup Schedules Admin" },
+  { permission: "datastore.backupSchedules.delete", role: "roles/datastore.backupSchedulesAdmin", title: "Cloud Datastore Backup Schedules Admin" },
+  { permission: "datastore.backups.list", role: "roles/datastore.backupsAdmin", title: "Cloud Datastore Backups Admin" },
+  { permission: "datastore.backups.delete", role: "roles/datastore.backupsAdmin", title: "Cloud Datastore Backups Admin" },
 ];
+
+const DAY = 86_400;
+/** Firestore's own backups (they live in the project and expire by themselves). Every retention is at most KEEP_DAYS. */
+const KEEP_DAYS = 30;
+const BACKUP_SCHEDULES: { label: string; recurrence: { dailyRecurrence: object } | { weeklyRecurrence: { day: string } }; retentionDays: number }[] = [
+  { label: "daily, kept 7 days", recurrence: { dailyRecurrence: {} }, retentionDays: 7 },
+  { label: "weekly (Tuesday), kept 4 weeks", recurrence: { weeklyRecurrence: { day: "TUESDAY" } }, retentionDays: 28 },
+];
+const DB = `projects/${PROJECT}/databases/(default)`;
+
+type Client = Awaited<ReturnType<GoogleAuth["getClient"]>>;
+type Schedule = { name: string; retention: string; dailyRecurrence?: object; weeklyRecurrence?: { day: string } };
+type Backup = { name: string; database: string; snapshotTime: string; expireTime: string; state: string };
+const seconds = (d: string) => Number(d.replace(/s$/, ""));
+const sameRecurrence = (s: Schedule, w: (typeof BACKUP_SCHEDULES)[number]) =>
+  "dailyRecurrence" in w.recurrence ? !!s.dailyRecurrence : s.weeklyRecurrence?.day === w.recurrence.weeklyRecurrence.day;
+
+/** Makes the database's backup schedules exactly BACKUP_SCHEDULES. */
+async function syncBackupSchedules(client: Client) {
+  const base = `https://firestore.googleapis.com/v1/${DB}/backupSchedules`;
+  const have = (await client.request<{ backupSchedules?: Schedule[] }>({ url: base })).data.backupSchedules ?? [];
+  const used = new Set<string>();
+  for (const w of BACKUP_SCHEDULES) {
+    const retention = `${w.retentionDays * DAY}s`;
+    const s = have.find((h) => !used.has(h.name) && sameRecurrence(h, w));
+    if (!s) {
+      await client.request({ url: base, method: "POST", data: { ...w.recurrence, retention } });
+      console.log(`  backups ${w.label}: created`);
+      continue;
+    }
+    used.add(s.name);
+    if (seconds(s.retention) !== w.retentionDays * DAY) {
+      await client.request({ url: `https://firestore.googleapis.com/v1/${s.name}?updateMask=retention`, method: "PATCH", data: { retention } });
+      console.log(`  backups ${w.label}: retention was ${Math.round(seconds(s.retention) / DAY)} days`);
+    } else console.log(`  backups ${w.label}: ok`);
+  }
+  for (const s of have.filter((h) => !used.has(h.name))) {
+    await client.request({ url: `https://firestore.googleapis.com/v1/${s.name}`, method: "DELETE" });
+    console.log(`  backup schedule ${s.name.split("/").pop()}: deleted (not in BACKUP_SCHEDULES)`);
+  }
+}
+
+/**
+ * Deletes backups that would outlive KEEP_DAYS (made under an older, longer schedule), but only once a backup that
+ * keeps the rules is READY, so the database is never left with none.
+ */
+async function pruneLongBackups(client: Client) {
+  const all = (await client.request<{ backups?: Backup[] }>({ url: `https://firestore.googleapis.com/v1/projects/${PROJECT}/locations/-/backups` })).data.backups ?? [];
+  const ours = all.filter((b) => b.database.endsWith("/databases/(default)") && b.state === "READY");
+  const life = (b: Backup) => (Date.parse(b.expireTime) - Date.parse(b.snapshotTime)) / 1000;
+  const long = ours.filter((b) => life(b) > KEEP_DAYS * DAY + 3600);
+  if (!long.length) return;
+  if (!ours.some((b) => life(b) <= KEEP_DAYS * DAY + 3600)) {
+    console.log(`  ${long.length} backup(s) outlive ${KEEP_DAYS} days; they go once a backup under the new schedules is ready (run this again tomorrow).`);
+    return;
+  }
+  for (const b of long) {
+    await client.request({ url: `https://firestore.googleapis.com/v1/${b.name}`, method: "DELETE" });
+    console.log(`  backup of ${b.snapshotTime.slice(0, 10)} (kept until ${b.expireTime.slice(0, 10)}): deleted`);
+  }
+}
 
 /** The key file to deploy with, and a cleanup for a temporary copy. */
 function keyFile(): { file: string; done(): void } {
@@ -74,6 +143,10 @@ async function main() {
     });
     console.log("\nTTL policies:");
     for (const f of ttl.data.fields ?? []) console.log(`  ${f.name.split("/collectionGroups/")[1]?.replace("/fields/", ".")}: ${f.ttlConfig?.state ?? "?"}`);
+
+    console.log("\nBackups:");
+    await syncBackupSchedules(client);
+    await pruneLongBackups(client);
   } finally {
     key.done();
   }
