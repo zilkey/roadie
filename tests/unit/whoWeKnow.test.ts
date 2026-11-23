@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { traceWhoWeKnow, venuesWeKnow, venueNetwork, knownActIds, type TraceData } from "@/lib/whoWeKnow";
+import { traceWhoWeKnow, venuesWeKnow, venueNetwork, knownActIds, promoterNetwork, type TraceData } from "@/lib/whoWeKnow";
 
 const base = (): TraceData => ({
   contacts: [
@@ -90,4 +90,50 @@ test("venueNetwork: an act with a show from today on is booked (soonest first, p
   const later = venueNetwork({ id: "v1" }, d, "2026-12-01");
   assert.deepEqual(later.booked, []);
   assert.deepEqual(later.played.map((a) => [a.act.id, a.past[0].eventId, a.past.length]), [["wheel", "e6", 1], ["hay", "e7", 3]]);
+});
+
+// ---------- promoterNetwork (a promoter's Network tab) ----------
+
+test("promoterNetwork: the promoter's own people link to it; acts and venue people link to the rooms they reach", () => {
+  const d = base();
+  const venues = [
+    { id: "v2", name: "Zeta Hall", promoterIds: ["msp"] },
+    { id: "v1", name: "Alpha Room", promoterIds: ["msp"], contactIds: ["sam"] },
+    { id: "v3", name: "Quiet Bar", promoterIds: ["msp"] },
+  ];
+  const net = promoterNetwork({ id: "msp", contactIds: ["kate", "lou"] }, venues, d, "2026-05-15");
+  // Venues by name, the ones nobody reaches set aside.
+  assert.deepEqual(net.venues.map((v) => v.id), ["v1", "v2"]);
+  assert.deepEqual(net.unreached.map((v) => v.id), ["v3"]);
+  const by = (from: string) => net.links.filter((l) => l.from === from).map(({ to, label, strength }) => ({ to, label, strength }));
+  // Kate works for the promoter: one link straight to it, not a "books it" link to each of its rooms.
+  assert.deepEqual(by("c:kate"), [{ to: "promoter", label: "works for them", strength: "works" }]);
+  assert.deepEqual(by("c:sam"), [{ to: "v1", label: "works here", strength: "works" }]);
+  assert.deepEqual(by("a:hay"), [{ to: "v1", label: "plays here 2026-06-01", strength: "booked" }]);
+  assert.deepEqual(by("a:strangers"), []); // Lou isn't someone we know, so Strangers isn't reachable
+  assert.deepEqual(by("a:wheel"), [{ to: "v2", label: "played here 2026-05-01", strength: "played" }]);
+  // Ordered by the rows they link to (Alpha's people by name, then Zeta's, then the promoter's own).
+  assert.deepEqual(net.people.map((p) => p.key), ["c:sam", "a:hay", "a:wheel", "c:kate"]);
+  assert.deepEqual(net.people.find((p) => p.key === "a:hay")?.via, [{ id: "sam", name: "Sam" }]);
+  assert.equal(net.byVenue.get("v1")?.booked.length, 1);
+});
+
+test("promoterNetwork: someone booking a room for another promoter still gets us in; an act played twice says so", () => {
+  const d = base();
+  d.events = [...d.events, { id: "e6", venueId: "v2", date: "2026-02-01", acts: [{ name: "Wheelwright", role: "support", actId: "wheel" }] }];
+  const net = promoterNetwork({ id: "msp" }, [{ id: "v2", name: "Zeta Hall", promoterIds: ["msp", "other"] }], d, "2026-05-15", (x) => `on ${x}`);
+  // Kate books it for this very promoter, which is the promoter's own link (none here: its contactIds weren't given), not a room link.
+  assert.deepEqual(net.links.map(({ from, label }) => ({ from, label })), [
+    { from: "c:sam", label: "books it for Other Promo" },
+    { from: "a:wheel", label: "played here 2 times" },
+  ]);
+});
+
+test("promoterNetwork: no venues, or nobody we know, is empty", () => {
+  const d = base();
+  d.contacts = d.contacts.map((c) => ({ ...c, weKnow: false }));
+  d.actNotes = [];
+  const net = promoterNetwork({ id: "msp", contactIds: ["kate"] }, [{ id: "v1", name: "Alpha Room" }], d, "2026-05-15");
+  assert.deepEqual([net.people, net.links, net.venues], [[], [], []]);
+  assert.deepEqual(net.unreached, [{ id: "v1", name: "Alpha Room" }]);
 });

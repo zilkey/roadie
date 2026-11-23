@@ -117,3 +117,94 @@ export function venuesWeKnow(venues: readonly TraceVenue[], d: TraceData): Set<s
 export function knownActIds(d: Pick<TraceData, "contacts" | "actNotes">): string[] {
   return [...knownSets({ ...d, promoters: [], events: [] }).acts.keys()].sort();
 }
+
+/** A link in a promoter's network diagram: who we know, and the venue (or the promoter itself) they get us to. */
+export interface NetworkLink {
+  from: string;
+  /** A venue id, or "promoter" for someone who works for the promoter. */
+  to: string;
+  /** What the link means, in a few words ("works here", "plays here Mar 4", "played here 3 times"). */
+  label: string;
+  /** Upcoming (booked to play) links are drawn strongest. */
+  strength: "booked" | "works" | "played";
+}
+export interface NetworkPerson {
+  key: string;
+  kind: "contact" | "act";
+  id: string;
+  name: string;
+  /** An act: the people we know in it, and whether we know the band itself. */
+  via?: Named[];
+  actKnown?: boolean;
+}
+export interface PromoterNetwork {
+  /** Everyone we know that reaches one of the promoter's rooms (or the promoter), in an order that keeps the links from crossing much. */
+  people: NetworkPerson[];
+  /** The promoter's venues someone reaches, then (`unreached`) the rest. */
+  venues: Named[];
+  unreached: Named[];
+  links: NetworkLink[];
+  /** Each reached venue's own Network breakdown, for the list under the diagram. */
+  byVenue: Map<string, VenueNetwork>;
+}
+
+const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
+
+/**
+ * A promoter's Network tab: how we can get to each of its venues through people we know. People who work for the promoter link
+ * straight to it; everyone else links to the room they work at, are booked at or have played. `fmt` formats a show date.
+ */
+export function promoterNetwork(
+  promoter: { id: string; contactIds?: string[] },
+  venues: readonly (TraceVenue & { name: string })[],
+  d: TraceData,
+  today: string,
+  fmt: (date: string) => string = (x) => x,
+): PromoterNetwork {
+  const { known } = knownSets(d);
+  const people = new Map<string, NetworkPerson>();
+  const links: NetworkLink[] = [];
+  const seen = new Set<string>();
+  const link = (p: NetworkPerson, l: Omit<NetworkLink, "from">) => {
+    if (!people.has(p.key)) people.set(p.key, p);
+    const k = `${p.key}>${l.to}`;
+    if (seen.has(k)) return;
+    seen.add(k);
+    links.push({ from: p.key, ...l });
+  };
+  const contactNode = (c: Named): NetworkPerson => ({ key: `c:${c.id}`, kind: "contact", id: c.id, name: c.name });
+
+  for (const id of new Set(promoter.contactIds ?? [])) {
+    const c = known.get(id);
+    if (c) link(contactNode(c), { to: "promoter", label: "works for them", strength: "works" });
+  }
+  const byVenue = new Map<string, VenueNetwork>();
+  const reached: Named[] = [], unreached: Named[] = [];
+  for (const v of [...venues].sort((x, y) => x.name.localeCompare(y.name))) {
+    const net = venueNetwork(v, d, today);
+    // Someone who books for this promoter is already linked to it; booking for another promoter still gets us to the room.
+    const around = net.around.filter((p) => !(p.kind === "books" && p.promoter.id === promoter.id));
+    const vn = { ...net, around };
+    const any = vn.booked.length + vn.played.length + around.length > 0;
+    (any ? reached : unreached).push({ id: v.id, name: v.name });
+    if (!any) continue;
+    byVenue.set(v.id, vn);
+    for (const a of vn.booked) {
+      link({ key: `a:${a.act.id}`, kind: "act", id: a.act.id, name: a.act.name, via: a.contacts, actKnown: a.actKnown },
+        { to: v.id, label: `plays here ${fmt(a.upcoming[0].date)}`, strength: "booked" });
+    }
+    for (const p of around) {
+      link(contactNode(p.contact), { to: v.id, label: p.kind === "works" ? "works here" : `books it for ${p.promoter.name}`, strength: "works" });
+    }
+    for (const a of vn.played) {
+      link({ key: `a:${a.act.id}`, kind: "act", id: a.act.id, name: a.act.name, via: a.contacts, actKnown: a.actKnown },
+        { to: v.id, label: a.past.length > 1 ? `played here ${plural(a.past.length, "time")}` : `played here ${fmt(a.past[0].date)}`, strength: "played" });
+    }
+  }
+  // Order people by the average row of what they link to (the promoter sits below every venue), so lines mostly run straight across.
+  const row = new Map<string, number>(reached.map((v, i) => [v.id, i]));
+  row.set("promoter", reached.length);
+  const order = (key: string) => { const xs = links.filter((l) => l.from === key).map((l) => row.get(l.to) ?? 0); return xs.reduce((s, x) => s + x, 0) / xs.length; };
+  const sorted = [...people.values()].sort((x, y) => order(x.key) - order(y.key) || x.name.localeCompare(y.name));
+  return { people: sorted, venues: reached, unreached, links, byVenue };
+}

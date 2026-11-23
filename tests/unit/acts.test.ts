@@ -152,3 +152,9 @@ test("actListed: genres, any picked one, adding up with the other filters", () =
   assert.equal(actListed(a, stats(), {}, { filter: "shortlist", genres: ["indie"] }), false);
   assert.equal(actListed(a, stats(), { shortlist: true }, { filter: "shortlist", genres: ["indie"] }), true);
 });
+
+test("actListed: known lists the acts we know", () => {
+  assert.equal(actListed({ name: "X" }, undefined, { weKnow: true }, { filter: "known" }), true);
+  assert.equal(actListed({ name: "X" }, undefined, { shortlist: true }, { filter: "known" }), false);
+  assert.equal(actListed({ name: "X" }, undefined, undefined, { filter: "known" }), false);
+});

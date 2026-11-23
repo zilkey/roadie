@@ -3,13 +3,13 @@
  * Networking (#82 S10): "We know them" on a contact or an act (a band-private flag, weKnow on contactNotes / actNotes), and what it
  * buys: the venue page's Network tab and the Venues list's "We know someone" chip. The paths come from src/lib/whoWeKnow.ts.
  */
-import { Fragment, useMemo } from "react";
+import { Fragment, useMemo, useState } from "react";
 import Link, { useArtist, useZone } from "@/lib/artist";
 import { useArrayContainsAny, useCollection } from "@/lib/firestore-hooks";
 import { useCommand, ErrorBox } from "@/components/ui";
 import { DetailCard } from "@/components/booking/DetailCards";
 import { hrefFor, useBooking } from "@/components/booking/common";
-import { knownActIds, venueNetwork, venuesWeKnow, type NetworkAct, type Named, type PlayedShow, type TraceData, type TraceVenue, type VenueNetwork } from "@/lib/whoWeKnow";
+import { knownActIds, promoterNetwork, venueNetwork, venuesWeKnow, type NetworkLink, type NetworkPerson, type PromoterNetwork, type NetworkAct, type Named, type PlayedShow, type TraceData, type TraceVenue, type VenueNetwork } from "@/lib/whoWeKnow";
 import { fmtEventYear } from "@/lib/venueEvents";
 import { dateInZone } from "@/lib/timezone";
 import type { ActNote, VenueEvent } from "@/schema";
@@ -51,7 +51,24 @@ export function WeKnowToggle({ kind, id, on }: { kind: "contact" | "act"; id: st
   );
 }
 
-const ROLE_WORD = { books: "books", dayOf: "day-of" } as const;
+/** The same flag as a checkbox, for a table row (the Contacts table, the Acts tab). */
+export function WeKnowCheck({ kind, id, name, on }: { kind: "contact" | "act"; id: string; name: string; on: boolean }) {
+  const { call, busy, error } = useCommand();
+  const command = kind === "contact" ? "contacts.update" : "acts.update";
+  // The box flips at once and holds the new value until the record catches up (or the save fails).
+  const [want, setWant] = useState<boolean | null>(null);
+  if (want !== null && want === on) setWant(null);
+  const shown = want ?? on;
+  const flip = async () => { setWant(!shown); if (!(await call(command, { id, patch: { weKnow: !shown } }))) setWant(null); };
+  return (
+    <label className="we-know-check" title={error ?? (shown ? "Someone in the band knows them" : "Mark that someone in the band knows them")}>
+      <input type="checkbox" checked={shown} disabled={busy} aria-label={`We know ${name}`} data-testid={`we-know-${id}`} onChange={() => void flip()} />
+      {error && <span className="sr-only" role="alert">{error}</span>}
+    </label>
+  );
+}
+
+const ROLE_WORD ={ books: "books", dayOf: "day-of" } as const;
 const contactLink = (c: Named) => <Link href={hrefFor("contact", c.id)} className="underline">{c.name}</Link>;
 const list = (xs: Named[]) => xs.map((c, i) => <Fragment key={c.id}>{i > 0 && ", "}{contactLink(c)}</Fragment>);
 
@@ -119,6 +136,109 @@ export function VenueNetworkTab({ b, venue }: { b: ReturnType<typeof useBooking>
       )}
       <span className="s" data-testid="network-hint">
         Someone counts when you mark them &ldquo;We know them&rdquo; on their contact or act page. Acts come from the venue calendars (Venue events), so refresh a room&apos;s calendar to bring in its latest bills.
+      </span>
+    </div>
+  );
+}
+
+const ROW = 60;
+/** Column left edges and width, in % of the diagram's width: People we know | Venues | the promoter. */
+const COL = { people: 0, venues: 37, promoter: 74, w: 26 } as const;
+
+/** One column's node centres (px), centred in the diagram's height. */
+const centres = (n: number, h: number) => Array.from({ length: n }, (_, i) => (h - n * ROW) / 2 + i * ROW + ROW / 2);
+
+function personSub(p: NetworkPerson, links: NetworkLink[]): string {
+  const mine = links.filter((l) => l.from === p.key);
+  const via = p.via?.length ? `${p.via.map((c) => c.name).join(", ")}${p.actKnown ? " + the band" : ""}` : "";
+  const what = mine.length === 1 ? mine[0].label : `${mine.length} links`;
+  return p.kind === "act" ? [via || "we know the band", what].join(" · ") : what;
+}
+
+/**
+ * The diagram: people (and acts) we know on the left, the promoter's rooms they reach in the middle, the promoter on the right.
+ * Booked-to-play links are solid accent, works-here links green, played-here links grey dashes. Hover or focus a node to trace it.
+ */
+function NetworkDiagram({ net, promoterName }: { net: PromoterNetwork; promoterName: string }) {
+  const [hot, setHot] = useState<string | null>(null);
+  const h = Math.max(net.people.length, net.venues.length, 1) * ROW;
+  const py = centres(net.people.length, h), vy = centres(net.venues.length, h), promY = h / 2;
+  const yOfPerson = new Map(net.people.map((p, i) => [p.key, py[i]]));
+  const yOfVenue = new Map(net.venues.map((v, i) => [v.id, vy[i]]));
+  const toPromoter = new Set(net.links.filter((l) => l.to === "promoter").map((l) => l.from));
+  const lit = (l: NetworkLink) => !hot || l.from === hot || l.to === hot || (hot === "promoter" && (l.to === "promoter" || yOfVenue.has(l.to)));
+  const nodeLit = (key: string) => !hot || hot === key || net.links.some((l) => lit(l) && (l.from === key || l.to === key)) || (key === "promoter" && hot !== null && yOfVenue.has(hot));
+  const curve = (x1: number, y1: number, x2: number, y2: number) => { const m = (x1 + x2) / 2; return `M${x1} ${y1} C${m} ${y1} ${m} ${y2} ${x2} ${y2}`; };
+  const hover = (key: string) => ({ onMouseEnter: () => setHot(key), onMouseLeave: () => setHot(null), onFocus: () => setHot(key), onBlur: () => setHot(null) });
+  const node = (key: string, y: number, left: number, body: React.ReactNode, cls = "") => (
+    <div key={key} className={`net-node ${cls}${nodeLit(key) ? "" : " dim"}`} style={{ top: y - (ROW - 12) / 2, left: `${left}%`, width: `${COL.w}%`, height: ROW - 12 }} {...hover(key)}>{body}</div>
+  );
+  return (
+    <div className="net-scroll">
+      <div className="net-heads"><span style={{ left: `${COL.people}%` }}>Who we know</span><span style={{ left: `${COL.venues}%` }}>Their venues</span><span style={{ left: `${COL.promoter}%` }}>Promoter</span></div>
+      <div className="net-diagram" style={{ height: h }} data-testid="network-diagram">
+        <svg viewBox={`0 0 100 ${h}`} preserveAspectRatio="none" width="100%" height={h} aria-hidden>
+          {net.links.map((l) => {
+            const y1 = yOfPerson.get(l.from)!, x1 = COL.people + COL.w;
+            const [x2, y2] = l.to === "promoter" ? [COL.promoter, promY] : [COL.venues, yOfVenue.get(l.to)!];
+            return <path key={`${l.from}>${l.to}`} d={curve(x1, y1, x2, y2)} className={`net-link ${l.strength}${lit(l) ? "" : " dim"}`} vectorEffect="non-scaling-stroke"><title>{l.label}</title></path>;
+          })}
+          {net.venues.map((v) => (
+            <path key={`${v.id}>p`} d={curve(COL.venues + COL.w, yOfVenue.get(v.id)!, COL.promoter, promY)} className={`net-link venue${!hot || hot === v.id || hot === "promoter" || net.links.some((l) => l.to === v.id && l.from === hot) ? "" : " dim"}`} vectorEffect="non-scaling-stroke" />
+          ))}
+        </svg>
+        {net.people.map((p) => node(p.key, yOfPerson.get(p.key)!, COL.people, <>
+          <Link href={hrefFor(p.kind, p.id)} className="nm" data-testid={`network-node-${p.kind}-${p.id}`}>{p.name}</Link>
+          <span className="sub">{personSub(p, net.links)}</span>
+        </>, p.kind === "act" ? "act" : toPromoter.has(p.key) ? "works" : ""))}
+        {net.venues.map((v) => node(v.id, yOfVenue.get(v.id)!, COL.venues, <>
+          <Link href={`${hrefFor("venue", v.id)}?tab=network`} className="nm" data-testid={`network-node-venue-${v.id}`}>{v.name}</Link>
+          <span className="sub">{(() => { const n = net.links.filter((l) => l.to === v.id).length; return `${n} ${n === 1 ? "way" : "ways"} in`; })()}</span>
+        </>, "venue"))}
+        {node("promoter", promY, COL.promoter, <><span className="nm">{promoterName}</span><span className="sub">{net.venues.length} of {net.venues.length + net.unreached.length} rooms reached</span></>, "promoter")}
+      </div>
+      <div className="net-key s"><span><i className="booked" />booked to play</span><span><i className="works" />works or books there</span><span><i className="played" />played there</span></div>
+    </div>
+  );
+}
+
+/**
+ * The promoter's Network tab (admins only): a diagram of how we reach its venues through people we know (contacts marked "We
+ * know them", acts we know or whose people we know, from the venue calendars), then the same paths listed room by room.
+ */
+export function PromoterNetworkTab({ b, promoter, venues }: { b: ReturnType<typeof useBooking>; promoter: { id: string; name: string; contactIds?: string[] }; venues: readonly (TraceVenue & { name: string })[] }) {
+  const data = useWeKnowData(b);
+  const zone = useZone();
+  const today = dateInZone(zone);
+  const net = useMemo(() => promoterNetwork(promoter, venues, data, today, fmtEventYear), [promoter, venues, data, today]);
+  const direct = net.people.filter((p) => net.links.some((l) => l.from === p.key && l.to === "promoter"));
+  const empty = net.people.length === 0;
+  return (
+    <div className="grid gap-4" data-testid="promoter-network">
+      <DetailCard private title="How we get in" testid="network-map">
+        {empty ? <div className="empty" data-testid="network-empty"><span>{venues.length === 0 ? "No venues linked to this promoter yet." : "No one we know works here, works at their rooms, or has played them yet."}</span></div>
+          : <NetworkDiagram net={net} promoterName={promoter.name} />}
+        {!empty && net.unreached.length > 0 && (
+          <span className="s" data-testid="network-unreached">No one yet at {net.unreached.map((v, i) => <Fragment key={v.id}>{i > 0 && ", "}<Link href={hrefFor("venue", v.id)} className="underline">{v.name}</Link></Fragment>)}.</span>
+        )}
+      </DetailCard>
+      {direct.length > 0 && (
+        <DetailCard private title="Works for them" testid="network-direct">
+          <Rows items={direct} keyOf={(p) => p.key} testid={(p) => `network-direct-${p.id}`} row={(p) => <>{contactLink(p)}<span className="d-muted">works for {promoter.name}</span></>} />
+        </DetailCard>
+      )}
+      {net.venues.map((v) => {
+        const vn = net.byVenue.get(v.id)!;
+        return (
+          <DetailCard key={v.id} private title={<Link href={`${hrefFor("venue", v.id)}?tab=network`} className="underline">{v.name}</Link>} testid={`network-venue-${v.id}`}>
+            <Rows items={vn.booked} keyOf={(a) => a.act.id} testid={(a) => `network-act-${a.act.id}`} row={(a) => <ActRow a={a} booked />} />
+            <Rows items={vn.around} keyOf={(p) => `${p.kind}:${p.contact.id}:${p.kind === "books" ? p.promoter.id : ""}`} testid={(p) => `network-${p.kind}`} row={(p) => <AroundRow p={p} />} />
+            <Rows items={vn.played} keyOf={(a) => a.act.id} testid={(a) => `network-act-${a.act.id}`} row={(a) => <ActRow a={a} booked={false} />} />
+          </DetailCard>
+        );
+      })}
+      <span className="s" data-testid="network-hint">
+        Someone counts when you tick &ldquo;We know&rdquo; on them in Contacts or on the Acts tab (or on their page). Acts come from the venue calendars, so refresh a room&apos;s calendar to bring in its latest bills.
       </span>
     </div>
   );

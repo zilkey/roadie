@@ -287,6 +287,11 @@ fieldset.sec { margin: 0; }
 .book-table tbody tr:last-child td { border-bottom: 0; }
 .book-table td.flag, .book-table th.flag { width: 44px; padding: 4px 0 4px 10px; }
 .book-table td.flag + td, .book-table th.flag + th { padding-left: 8px; }
+/* "We know them" in a table row (Contacts, Acts): a plain checkbox in a 44px hit area. */
+.book-table th.wk, .book-table td.wk { width: 1%; text-align: center; white-space: nowrap; }
+.we-know-check { display: inline-flex; width: 44px; height: 44px; align-items: center; justify-content: center; cursor: pointer; }
+.we-know-check input { width: 18px; height: 18px; accent-color: var(--accent); cursor: pointer; }
+.we-know-check input:disabled { opacity: .5; cursor: default; }
 .book-table th:first-child:not(.flag), .book-table td:first-child:not(.flag) { padding-left: 22px; }
 .book-table th.pitch, .book-table td.pitch { width: 30%; padding-right: 22px; }
 /* Wide-name tabs (All, Pitch List, Venues, Festivals): the name column takes the slack and never wraps; the others sit at their content width. */
@@ -1010,3 +1015,30 @@ dialog.tp-sheet::backdrop { background: var(--backdrop); }
 .my-money-list { display: none; }
 .my-money-item { gap: 4px; }
 @media (max-width: 639px) { .my-money-list { display: grid; } .my-money-wide { display: none; } }
+
+/* A promoter's Network tab: who we know -> their venues -> the promoter (WhoWeKnow.tsx). Columns are % of the width; rows are px. */
+.net-scroll { overflow-x: auto; }
+.net-heads, .net-diagram { position: relative; min-width: 620px; }
+.net-heads { height: 22px; font-size: 0.75rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.net-heads span { position: absolute; top: 0; }
+.net-diagram svg { position: absolute; inset: 0; overflow: visible; }
+.net-link { fill: none; stroke-width: 2; transition: opacity .15s; }
+.net-link.booked { stroke: var(--accent); stroke-width: 2.5; }
+.net-link.works { stroke: var(--pitched); }
+.net-link.played { stroke: var(--empty-border); stroke-dasharray: 5 4; }
+.net-link.venue { stroke: var(--border); stroke-width: 3; }
+.net-link.dim, .net-node.dim { opacity: .2; }
+.net-node { position: absolute; display: flex; flex-direction: column; justify-content: center; min-width: 0; padding: 4px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); transition: opacity .15s; }
+.net-node .nm { font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.net-node a.nm:hover { text-decoration: underline; }
+.net-node .sub { font-size: 0.75rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.net-node.works { border-color: var(--pitched); }
+.net-node.act { border-style: dashed; }
+.net-node.venue { background: var(--empty); }
+.net-node.promoter { background: var(--accent-soft); border-color: var(--accent); }
+.net-key { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; }
+.net-key span { display: inline-flex; align-items: center; gap: 6px; }
+.net-key i { display: inline-block; width: 22px; height: 0; border-top: 2px solid; }
+.net-key i.booked { border-color: var(--accent); border-top-width: 3px; }
+.net-key i.works { border-color: var(--pitched); }
+.net-key i.played { border-color: var(--empty-border); border-top-style: dashed; }

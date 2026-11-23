@@ -11,13 +11,14 @@ import { useCollection } from "@/lib/firestore-hooks";
 import { useHasDraft } from "@/lib/drafts";
 import { highlight } from "@/lib/booking";
 import { isAgent, isManager } from "@/lib/contactRoles";
+import { WeKnowCheck } from "@/components/booking/WhoWeKnow";
 import type { Show } from "@/schema";
 
 /** The Contacts section: everyone the band deals with, with where they work. Admins only (contacts are admin-only data). */
 export function ContactsIndex() { return <AdminOnly><Contacts /></AdminOnly>; }
 
-type Filter = "venue" | "festival" | "promoter" | "host" | "manager" | "agent" | "email";
-const FILTERS: [Filter, string][] = [["venue", "Venue"], ["festival", "Festival"], ["promoter", "Promoter"], ["host", "Host"], ["manager", "Managers"], ["agent", "Booking agents"], ["email", "Has email"]];
+type Filter = "known" | "venue" | "festival" | "promoter" | "host" | "manager" | "agent" | "email";
+const FILTERS: [Filter, string][] = [["known", "We know them"], ["venue", "Venue"], ["festival", "Festival"], ["promoter", "Promoter"], ["host", "Host"], ["manager", "Managers"], ["agent", "Booking agents"], ["email", "Has email"]];
 type Place = { kind: "venue" | "festival" | "promoter"; id: string; name: string; city?: string };
 
 const Dash = () => <span className="dash">—</span>;
@@ -50,7 +51,7 @@ function Contacts() {
     return [...b.contacts].sort((x, y) => x.name.localeCompare(y.name)).filter((c) => {
       const at = placesOf.get(c.id) ?? [];
       if (needle && ![c.name, ...c.emails, c.title ?? "", ...at.map((p) => p.name)].some((t) => t.toLowerCase().includes(needle))) return false;
-      return on.every((f) => f === "host" ? hosts.has(c.id) : f === "email" ? c.emails.length > 0 : f === "manager" ? isManager(c.title) : f === "agent" ? isAgent(c.title) : at.some((p) => p.kind === f));
+      return on.every((f) => f === "known" ? !!c.weKnow : f === "host" ? hosts.has(c.id) : f === "email" ? c.emails.length > 0 : f === "manager" ? isManager(c.title) : f === "agent" ? isAgent(c.title) : at.some((p) => p.kind === f));
     });
   }, [b.contacts, placesOf, hosts, q, on]);
 
@@ -103,7 +104,7 @@ function Contacts() {
         {rows.length > 0 && (
           <div className="book-tw">
             <table className="book-table">
-              <thead><tr><th>Name</th><th>Works with</th><th>City</th><th>Email</th><th>Phone</th></tr></thead>
+              <thead><tr><th>Name</th><th>Works with</th><th>City</th><th>Email</th><th>Phone</th><th className="wk" title="Someone in the band knows them: the venues and promoters they're linked to show it on their Network tab">We know</th></tr></thead>
               <tbody>
                 {rows.map((c) => {
                   const at = placesOf.get(c.id) ?? [];
@@ -123,6 +124,7 @@ function Contacts() {
                       <td className="nw">{at.find((p) => p.kind === "venue")?.city || <Dash />}</td>
                       <td>{c.emails[0] ? <a className="em" href={`mailto:${c.emails[0]}`}>{hl(c.emails[0])}</a> : <Dash />}</td>
                       <td className="nw">{c.phones[0] ? <a className="ph" href={`tel:${c.phones[0]}`}>{fmtPhone(c.phones[0])}</a> : <Dash />}</td>
+                      <td className="wk"><WeKnowCheck kind="contact" id={c.id} name={c.name} on={!!c.weKnow} /></td>
                     </tr>
                   );
                 })}

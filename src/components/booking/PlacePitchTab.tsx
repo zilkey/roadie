@@ -15,7 +15,9 @@ import { isActive } from "@/lib/booking";
  * band's active pitch on the place shows, else "Start a pitch". It also gives the page's one header its trail crumb, status pill,
  * Booked it button and the pitch's More items.
  */
-export function usePlacePitch(kind: "promoter" | "edition", id: string, pitchId: string | undefined, defaultTab: "pitch" | "details") {
+export type PlaceTab = "pitch" | "details" | "network";
+/** `network`: a third tab, Network (promoters: how we reach their venues through people we know, WhoWeKnow.tsx). */
+export function usePlacePitch(kind: "promoter" | "edition", id: string, pitchId: string | undefined, defaultTab: "pitch" | "details", { network = false } = {}) {
   const { artistId } = useArtist();
   const b = useBooking();
   const sp = useSearchParams();
@@ -28,8 +30,8 @@ export function usePlacePitch(kind: "promoter" | "edition", id: string, pitchId:
   const past = mine.filter((p) => p.id !== pitch?.id).sort((a, c) => (c.createdAt?.toMillis() ?? 0) - (a.createdAt?.toMillis() ?? 0));
   const campaign = pitch?.campaignId ? b.campaigns.find((c) => c.id === pitch.campaignId) : undefined;
   const asked = sp.get("tab");
-  const tab: "pitch" | "details" = asked === "pitch" || asked === "details" ? asked : defaultTab;
-  const setTab = (t: "pitch" | "details") => router.replace(`${pathname}${t === defaultTab ? "" : `?tab=${t}`}`);
+  const tab: PlaceTab = asked === "pitch" || asked === "details" || (network && asked === "network") ? asked : defaultTab;
+  const setTab = (t: PlaceTab) => router.replace(`${pathname}${t === defaultTab ? "" : `?tab=${t}`}`);
   const crumb = pitch ? campaignCrumb(campaign, isActive(pitch.status)) : undefined;
   const pill = pitch ? <StatusPill status={pitch.status} /> : undefined;
   const bookedIt = pitch && tab === "pitch" && pitch.status !== "declined" && pitch.status !== "dropped"
@@ -38,7 +40,7 @@ export function usePlacePitch(kind: "promoter" | "edition", id: string, pitchId:
     onSelect: async () => { if (confirm("Take this off the Pitch List?") && (await call("pitches.remove", { id: pitch.id }))) router.replace(campaignCrumb(campaign).href!); } }] : [];
   if (pitch && pitch.status !== "dropped") moreItems.push({ key: "abandon", testid: "pitch-abandon", label: "Abandon pitch", danger: true,
     onSelect: () => { if (confirm("Abandon this pitch? It moves to Past pitches.")) void call("pitches.move", { id: pitch.id, status: "dropped" }); } });
-  const tabs = (details: string) => <Tabs<"pitch" | "details"> testid="place-tab" value={tab} onChange={setTab} options={[["pitch", "Pitch"], ["details", details]]} />;
+  const tabs = (details: string) => <Tabs<PlaceTab> testid="place-tab" value={tab} onChange={setTab} options={[["pitch", "Pitch"], ["details", details], ...(network ? [["network", "Network"] as [PlaceTab, string]] : [])]} />;
   const body = tab === "pitch" && (
     <>
       {pitch ? <PitchBody key={pitch.id} id={pitch.id} embedded booking={booking} setBooking={setBooking} /> : (

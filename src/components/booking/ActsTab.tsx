@@ -26,6 +26,7 @@ import { ErrorBox, useCommand } from "@/components/ui";
 import { hrefFor } from "@/components/booking/common";
 import { CheckFilter } from "@/components/booking/CheckFilter";
 import { LinkIcons } from "@/components/booking/LinkIcons";
+import { WeKnowCheck } from "@/components/booking/WhoWeKnow";
 import { useOurGenres } from "@/components/booking/useOurGenres";
 import { ACT_FILTERS, actListed, type ActFilter, type ActStats } from "@/lib/acts";
 import { fmtEventDay, genreOptions } from "@/lib/venueEvents";
@@ -184,7 +185,7 @@ export function ActsTab() {
       {lookupStatus && <span className="s" data-testid="acts-lookup-status">{lookupStatus}</span>}
       {loading && <span className="s">Loading…</span>}
       {!loading && rows.length === 0 && (
-        <div className="empty" data-testid="acts-empty"><span>{filter === "shortlist" && !q && !city ? "You aren't watching any acts yet. Tap an act's star to watch it." : "Nothing matches."}</span></div>
+        <div className="empty" data-testid="acts-empty"><span>{filter === "shortlist" && !q && !city ? "You aren't watching any acts yet. Tap an act's star to watch it." : filter === "known" && !q && !city && !genres.length ? "No acts marked yet. Tick We know on an act you know." : "Nothing matches."}</span></div>
       )}
       {!loading && rows.length > 0 && (
         <div className="book-tw">
@@ -195,6 +196,7 @@ export function ActsTab() {
               <th className="seen">Seen at</th>
               <th className="next">Next show</th>
               <th className="sl acts-sl">Sounds like</th>
+              <th className="wk" title="Someone in the band knows them: the rooms they play show it on their Network tab">We know</th>
             </tr></thead>
             <tbody>
               {page.map((a) => {
@@ -245,6 +247,7 @@ export function ActsTab() {
                       )}
                       {a.description ? <span className="s line-clamp-2" title={a.description}>{a.description}</span> : !gs.length && <span className="s">{a.lookedUpAt ? "Nothing found" : "Not looked up"}</span>}
                     </td>
+                    <td className="wk"><WeKnowCheck kind="act" id={a.id} name={a.name} on={!!take?.weKnow} /></td>
                   </tr>
                 );
               })}

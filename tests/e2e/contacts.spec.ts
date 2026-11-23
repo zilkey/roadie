@@ -64,6 +64,38 @@ test("search and a filter chip narrow the list; a name opens the contact", async
   await expect(page.getByTestId("contact-page")).toBeVisible();
 });
 
+test("We know in the table marks a contact; the filter finds them; their promoter's Network tab draws the way in", async ({ page }) => {
+  await signInAs(page, "rudy");
+  await page.goto(A("/contacts"));
+  const row = page.getByTestId(/^row-contact-/).filter({ hasText: "Desmond Webb" });
+  const box = row.getByTestId(/^we-know-/);
+  await expect(box).not.toBeChecked();
+  await box.check();
+  await expect(box).toBeChecked();
+  await page.reload();
+  await expect(page.getByTestId(/^row-contact-/).filter({ hasText: "Desmond Webb" }).getByTestId(/^we-know-/)).toBeChecked();
+  await page.getByTestId("contacts-filter-known").click();
+  await expect(page.getByTestId(/^row-contact-/)).toHaveCount(1);
+  await expect(page.getByTestId(/^row-contact-/)).toContainText("Desmond Webb");
+
+  // Desmond works for Front Range Presents and at Heron Theatre, which it books.
+  await page.getByTestId(/^row-contact-/).getByRole("link", { name: "Front Range Presents" }).click();
+  await expect(page.getByTestId("promoter-page")).toBeVisible();
+  await page.getByTestId("place-tab-network").click();
+  await expect(page).toHaveURL(/\?tab=network$/);
+  const map = page.getByTestId("network-diagram");
+  await expect(map.getByTestId(/^network-node-contact-/)).toHaveText("Desmond Webb");
+  await expect(map.getByTestId(/^network-node-venue-/)).toHaveText("Heron Theatre");
+  await expect(page.getByTestId("network-map")).toContainText("1 of 1 rooms reached");
+  await expect(page.getByTestId(/^network-direct-/)).toContainText("works for Front Range Presents");
+  await expect(page.getByTestId(/^network-venue-/).getByTestId("network-works")).toContainText("works here");
+
+  // unmark, so other specs see Desmond as before
+  await page.goto(A("/contacts"));
+  await page.getByTestId(/^row-contact-/).filter({ hasText: "Desmond Webb" }).getByTestId(/^we-know-/).uncheck();
+  await expect(page.getByTestId(/^row-contact-/).filter({ hasText: "Desmond Webb" }).getByTestId(/^we-know-/)).not.toBeChecked();
+});
+
 test("Add contact makes nothing until Add is pressed; Cancel clears the draft so the form stays shut on reload", async ({ page }) => {
   await signInAs(page, "rudy");
   const name = `Draft Person ${Date.now()}`;

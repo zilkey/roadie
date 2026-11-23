@@ -142,6 +142,27 @@ test("a venue's Network tab lists an act we know that's booked to play there", a
   await expect(page.getByTestId("we-know")).toHaveAttribute("data-on", "0");
 });
 
+test("the Acts tab's We know box marks an act, and the We know them filter lists it", async ({ page }) => {
+  await signInAs(page, "rudy");
+  const sup = href.support.split("/").pop()!;
+  await page.goto(A("/booking/acts?show=all"));
+  await page.getByTestId("acts-q").fill("Sample Support");
+  const box = page.getByTestId(`we-know-${sup}`);
+  await expect(box).not.toBeChecked();
+  await box.check();
+  await expect(box).toBeChecked();
+  await page.getByTestId("acts-q").fill("");
+  await page.getByTestId("acts-filter").selectOption("known");
+  await expect(page.getByTestId(/^act-row-/)).toHaveCount(1);
+  await expect(page.getByTestId(`act-row-${sup}`)).toBeVisible();
+  await page.goto(href.support); // the act's page shows the same flag
+  await expect(page.getByTestId("we-know")).toHaveAttribute("data-on", "1");
+
+  await page.goto(A("/booking/acts?show=known"));
+  await page.getByTestId(`we-know-${sup}`).uncheck();
+  await expect(page.getByTestId("acts-empty")).toContainText("No acts marked yet");
+});
+
 test("the Acts tab shows the shortlist, all acts, a search, and hides an act that isn't a fit until it's searched for", async ({ page }) => {
   await signInAs(page, "rudy");
   const id = (p: string) => p.split("/").pop()!;

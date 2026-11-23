@@ -19,9 +19,10 @@ import { InlineValue, PlusButton } from "@/components/InlineValue";
 import { PickDialog, RowX } from "@/components/booking/PickDialog";
 import { PromoterPitchedShows } from "@/components/booking/PromoterPitchedShows";
 import { withBandNote } from "@/lib/bandNotes";
+import { PromoterNetworkTab } from "@/components/booking/WhoWeKnow";
 import type { Promoter } from "@/schema";
 
-/** A promoter's one page (#82): Pitch (its pitch, then the shows pitched at its venues) | Promoter details. Its own route opens Promoter details; its pitch's route opens Pitch. */
+/** A promoter's one page (#82): Pitch (its pitch, then the shows pitched at its venues) | Promoter details | Network (who we know that gets us to its venues). Its own route opens Promoter details; its pitch's route opens Pitch. */
 export function PromoterWorkspace(props: { placeId: string; pitchId?: string; defaultTab: "pitch" | "details" }) { return <AdminOnly><PromoterPage {...props} /></AdminOnly>; }
 
 const KIND_LABEL: Record<Promoter["kind"], string> = {
@@ -32,7 +33,7 @@ const KIND_LABEL: Record<Promoter["kind"], string> = {
 const ABOUT_FIELDS = promoterForm.fields.filter((f) => ["name", "kind", "website"].includes(f.key));
 
 function PromoterPage({ placeId: id, pitchId, defaultTab }: { placeId: string; pitchId?: string; defaultTab: "pitch" | "details" }) {
-  const place = usePlacePitch("promoter", id, pitchId, defaultTab);
+  const place = usePlacePitch("promoter", id, pitchId, defaultTab, { network: true });
   const router = useRouter();
   const { artistId } = useArtist();
   const { doc: shared, loading } = useDoc<Promoter>("promoters", id);
@@ -89,6 +90,7 @@ function PromoterPage({ placeId: id, pitchId, defaultTab }: { placeId: string; p
 {place.tabs("Promoter details")}
       {place.body}
       {place.tab === "pitch" && <PromoterPitchedShows venues={venues} />}
+      {place.tab === "network" && <PromoterNetworkTab b={b} promoter={p} venues={venues} />}
       {place.tab === "details" && <>
       <CardGroup kind="shared">
         <DetailCard title="About" edit={edit} editKey="about" locked={!canEditShared} warn={SHARED_WARN} editTestid="edit-toggle"

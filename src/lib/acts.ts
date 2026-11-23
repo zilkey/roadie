@@ -131,10 +131,11 @@ export function actStats(events: EvLike[], venues: Map<string, VenueLike>, ours:
 /** "Aggie Theatre (opening) · Bluebird Theater (headlining)". */
 export const roomsLine = (rooms: Room[]) => rooms.map((r) => `${r.name} (${r.roles.length === 2 ? "headlining, opening" : r.roles[0] === "support" ? "opening" : "headlining"})`).join(" · ");
 
-export type ActFilter = "shortlist" | "opened" | "tour" | "all";
-export const ACT_FILTERS: [ActFilter, string][] = [["shortlist", "Watching"], ["opened", "Opened at our rooms"], ["tour", "On tour"], ["all", "All acts"]];
+/** `known`: acts we know (the band-private weKnow flag); the Acts tab offers it, acts.find does not. */
+export type ActFilter = "shortlist" | "known" | "opened" | "tour" | "all";
+export const ACT_FILTERS: [ActFilter, string][] = [["shortlist", "Watching"], ["known", "We know them"], ["opened", "Opened at our rooms"], ["tour", "On tour"], ["all", "All acts"]];
 
-export interface ActTake { shortlist?: boolean; relationship?: ActRelationship | string; note?: string }
+export interface ActTake { shortlist?: boolean; weKnow?: boolean; relationship?: ActRelationship | string; note?: string }
 /**
  * Whether an act is on the list for a filter, a city, genres (any of them, as on Venue calendars: "indie" covers "indie folk") and a
  * search; they add up. "Not a fit" acts are hidden unless searched for by name.
@@ -146,6 +147,7 @@ export function actListed(a: { name: string; genres?: string[] }, s: ActStats | 
   if (f.city && !s?.cities.includes(f.city)) return false;
   if (!genresMatch(f.genres ?? [], a.genres)) return false;
   if (f.filter === "shortlist") return !!take?.shortlist;
+  if (f.filter === "known") return !!take?.weKnow;
   if (f.filter === "opened") return !!s?.openedAt.length;
   if (f.filter === "tour") return !!s?.tour;
   return true;
