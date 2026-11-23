@@ -4,8 +4,9 @@ import { matches } from "./query";
 export interface GMessage {
   id: string; threadId: string; account: string; direction: "sent" | "received";
   from: string; /** Display name of the sender; missing on messages written before it existed. */ fromName?: string; to: string[]; cc: string[]; subject: string; body: string; html?: string; date: string;
+  /** Only on search results: a draft, or scheduled (see GET /messages). */ unsent?: "draft" | "scheduled";
 }
-export interface GDraft { id: string; account: string; to: string[]; cc: string[]; subject: string; body: string; html?: string; threadId?: string; date: string; messageId?: string; /** Gmail's Schedule send: out of Drafts, waiting to go. */ scheduled?: boolean }
+export interface GDraft { id: string; account: string; to: string[]; cc: string[]; subject: string; body: string; html?: string; threadId?: string; date: string; messageId?: string; /** Gmail's Schedule send: out of Drafts, waiting to go. */ scheduled?: boolean; /** When a scheduled draft goes. */ sendAt?: string }
 export interface GmailState { seq: number; messages: GMessage[]; drafts: GDraft[]; /** Gmail signature (HTML) per account, set with PUT /settings/signature. */ signatures?: Record<string, string> }
 
 const list = (v: unknown): string[] => (Array.isArray(v) ? v.map(String) : v ? [String(v)] : []);
@@ -15,6 +16,12 @@ const threadsOf = (s: GmailState, account?: string) => {
   return [...by.entries()].map(([id, messages]) => ({ id, subject: messages[0].subject, messages, lastDate: messages[messages.length - 1].date }))
     .sort((a, b) => b.lastDate.localeCompare(a.lastDate));
 };
+
+/** A draft as Gmail's search shows it: an unsent message, dated when it goes once scheduled. */
+const unsentMessage = (d: GDraft): GMessage => ({
+  id: d.messageId ?? d.id, threadId: d.threadId ?? d.id, account: d.account, direction: "sent", from: d.account, fromName: "", to: d.to, cc: d.cc,
+  subject: d.subject, body: d.body, date: d.scheduled && d.sendAt ? d.sendAt : d.date, unsent: d.scheduled ? "scheduled" : "draft",
+});
 
 const routes: Route<GmailState>[] = [
   ["POST", "/messages/send", ({ body }, s) => {
@@ -36,7 +43,19 @@ const routes: Route<GmailState>[] = [
     return { json: d };
   }],
   // Test setup, what a person does in Gmail with a draft Roadie made: Schedule send (scheduled), send it (optionally at `date`), or delete it.
-  ["POST", "/drafts/:id/schedule", ({ params }, s) => { const d = need(s.drafts.find((x) => x.id === params.id), "Draft"); d.scheduled = true; return d; }],
+  // Test setup: a draft made in Gmail, not by Roadie (body as POST /drafts), optionally already scheduled ({scheduled, sendAt}).
+  ["POST", "/drafts/gmail", ({ body }, s) => {
+    required(body, "from", "subject");
+    const d: GDraft = { id: `d${++s.seq}`, account: body.from, to: list(body.to), cc: list(body.cc), subject: body.subject, body: body.body ?? "",
+      threadId: body.threadId || `t${++s.seq}`, messageId: `m${++s.seq}`, date: new Date().toISOString(), ...(body.scheduled ? { scheduled: true, sendAt: new Date(body.sendAt ?? Date.now() + 86_400_000).toISOString() } : {}) };
+    s.drafts.push(d);
+    return { json: d };
+  }],
+  ["POST", "/drafts/:id/schedule", ({ params, body }, s) => {
+    const d = need(s.drafts.find((x) => x.id === params.id), "Draft");
+    d.scheduled = true; d.sendAt = new Date(body?.sendAt ?? Date.now() + 86_400_000).toISOString();
+    return d;
+  }],
   ["POST", "/drafts/:id/send", ({ params, body }, s) => {
     const d = need(s.drafts.find((x) => x.id === params.id), "Draft");
     s.drafts = s.drafts.filter((x) => x !== d);
@@ -47,16 +66,19 @@ const routes: Route<GmailState>[] = [
   }],
   ["DELETE", "/drafts/:id", ({ params }, s) => { s.drafts = s.drafts.filter((x) => x.id !== params.id); return { ok: true }; }],
   ["GET", "/drafts/:id/status", ({ params, query }, s) => {
-    const d = s.drafts.find((x) => x.id === params.id);
+    // Found by its message when Roadie only saw it scheduled (no draft id): like Gmail, a scheduled message has left Drafts.
+    const d = s.drafts.find((x) => x.id === params.id || (!!x.messageId && x.messageId === query.get("messageId")));
     if (d) return { state: d.scheduled ? "scheduled" : "draft" };
     const t = threadsOf(s).find((x) => x.id === query.get("threadId"));
     const message = t?.messages.find((m) => m.id === query.get("messageId") && m.direction === "sent");
     return message ? { json: { state: "sent", message, thread: t } } : { state: "gone" };
   }],
   ["GET", "/drafts", ({ query }, s) => s.drafts.filter((d) => !query.get("account") || d.account === query.get("account"))],
+  // Like Gmail's search, drafts and scheduled mail come back too (not in a thread's own listing).
   ["GET", "/messages", ({ query }, s) => {
     const q = query.get("q");
-    return s.messages.filter((m) => (!query.get("account") || m.account === query.get("account")) && (!query.get("threadId") || m.threadId === query.get("threadId")) && matches(q, m));
+    const unsent = query.get("threadId") ? [] : s.drafts.map(unsentMessage);
+    return [...s.messages, ...unsent].filter((m) => (!query.get("account") || m.account === query.get("account")) && (!query.get("threadId") || m.threadId === query.get("threadId")) && matches(q, m));
   }],
   // A message that arrives from outside: a stranger's first email or a web form's auto-reply (new thread), or one more in an existing thread.
   ["POST", "/messages/receive", ({ body }, s) => {
@@ -72,7 +94,13 @@ const routes: Route<GmailState>[] = [
     return { json: m }; // wrapped: see /messages/send
   }],
   ["GET", "/threads", ({ query }, s) => threadsOf(s, query.get("account") ?? undefined)],
-  ["GET", "/threads/:id", ({ params }, s) => need(threadsOf(s).find((t) => t.id === params.id), "Thread")],
+  ["GET", "/threads/:id", ({ params, query }, s) => {
+    if (!query.get("unsent")) return need(threadsOf(s).find((t) => t.id === params.id), "Thread");
+    // ?unsent=1: its drafts and scheduled mail too, as search shows them.
+    const messages = [...s.messages.filter((m) => m.threadId === params.id), ...s.drafts.filter((d) => d.threadId === params.id).map((d) => unsentMessage(d))];
+    need(messages[0], "Thread");
+    return { id: params.id, subject: messages[0].subject, messages, lastDate: messages[messages.length - 1].date };
+  }],
   // The Gmail signature, as users.settings.sendAs.list answers it: one primary address for the account.
   ["GET", "/settings/sendAs", ({ query }, s) => {
     const account = query.get("account") ?? "";

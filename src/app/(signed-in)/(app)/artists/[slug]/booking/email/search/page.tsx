@@ -10,16 +10,21 @@ import { useProfile } from "@/lib/auth";
 import { nameFromAddress } from "@/lib/email-signature";
 import { roleFirst, fmtPhone } from "@/lib/venues";
 import { e164 } from "@/schema/normalize";
+import { gmailDraftLink } from "@/lib/email-compose";
 import type { Row } from "@/lib/firestore-hooks";
 import type { Contact } from "@/schema";
 
 type Kind = "venue" | "promoter" | "festival" | "edition";
 const KINDS: readonly string[] = ["venue", "promoter", "festival", "edition"];
-interface ThreadHit { threadId: string; subject: string; snippet: string; lastDate: string; lastFrom: string; messageCount: number; participants: string[]; linkedId?: string }
+interface ThreadHit {
+  threadId: string; subject: string; snippet: string; lastDate: string; lastFrom: string; messageCount: number; participants: string[]; linkedId?: string;
+  unsent?: { state: "draft" | "scheduled"; date: string; messageId: string }; tracked?: boolean;
+}
 interface PersonHit { email: string; name: string; title?: string; phone?: string; lastDate: string; count: number; contactId?: string }
 type Place = { kind: Kind; id: string; name: string; word: string; attach: "venues" | "promoters" | "festivals"; placeId: string; href: string };
 
 const short = (iso: string, zone: string) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: zone });
+const when = (iso: string, zone: string) => new Date(iso).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: zone });
 const domainOf = (a: string) => a.split("@")[1] ?? "";
 
 export default function Page() {
@@ -45,14 +50,21 @@ function SearchGmail() {
     }
     if (kind === "promoter") {
       const p = b.promoters.find((x) => x.id === id);
-      return p ? { place: { kind, id, name: p.name, word: "promoter", attach: "promoters", placeId: id, href: hrefFor("promoter", id) }, contactIds: p.contactIds ?? [] } : null;
+      // Its rooms' contacts too, after its own: Z2's rooms list bookingasst@z2ent.com while Z2 itself has none (2026-11-22).
+      const rooms = b.venues.filter((v) => v.promoterIds.includes(id)).flatMap((v) => roleFirst(v.contactIds.map((c) => ({ id: c })), v.bookingContactIds).map((c) => c.id));
+      return p ? { place: { kind, id, name: p.name, word: "promoter", attach: "promoters", placeId: id, href: hrefFor("promoter", id) }, contactIds: [...new Set([...(p.contactIds ?? []), ...rooms])] } : null;
     }
     const festivalId = kind === "edition" ? b.editions.find((e) => e.id === id)?.festivalId : id;
     const f = b.festivals.find((x) => x.id === festivalId);
     return f ? { place: { kind, id, name: f.name, word: "festival", attach: "festivals", placeId: f.id, href: hrefFor("festival", f.id) }, contactIds: f.contactIds ?? [] } : null;
   }, [kindRaw, id, b.venues, b.promoters, b.festivals, b.editions]);
 
-  const contacts = useMemo(() => (found?.contactIds ?? []).map((c) => b.contacts.find((x) => x.id === c)).filter((c): c is Row<Contact> => !!c && c.emails.length > 0), [found, b.contacts]);
+  // One address once: a promoter's rooms often share one booking address.
+  const contacts = useMemo(() => {
+    const seen = new Set<string>();
+    return (found?.contactIds ?? []).map((c) => b.contacts.find((x) => x.id === c))
+      .filter((c): c is Row<Contact> => !!c && c.emails.length > 0 && !seen.has(c.emails[0]) && (seen.add(c.emails[0]), true));
+  }, [found, b.contacts]);
   const domains = useMemo(() => [...new Set(contacts.flatMap((c) => c.emails.map(domainOf)))], [contacts]);
   const sharedDomain = contacts.length > 0 && domains.length === 1 ? domains[0] : "";
 
@@ -71,14 +83,14 @@ function Search({ place, pitch, contacts, sharedDomain, account }: { place: Plac
       <section className="card">
         <Tabs<"threads" | "people"> value={tab} onChange={setTab} testid="gmail-tabs" options={[["threads", "Threads"], ["people", "People"]]} />
         {/* Both stay mounted so a search survives a switch of tab. */}
-        <div hidden={tab !== "threads"}><ThreadsTab place={place} pitch={pitch} contacts={contacts} sharedDomain={sharedDomain} /></div>
+        <div hidden={tab !== "threads"}><ThreadsTab place={place} pitch={pitch} contacts={contacts} sharedDomain={sharedDomain} account={account} /></div>
         <div hidden={tab !== "people"}><PeopleTab place={place} sharedDomain={sharedDomain} active={tab === "people"} /></div>
       </section>
     </div>
   );
 }
 
-function ThreadsTab({ place, pitch, contacts, sharedDomain }: { place: Place; pitch?: string; contacts: Row<Contact>[]; sharedDomain: string }) {
+function ThreadsTab({ place, pitch, contacts, sharedDomain, account }: { place: Place; pitch?: string; contacts: Row<Contact>[]; sharedDomain: string; account: string }) {
   const router = useRouter();
   const zone = useZone();
   const b = useBooking();
@@ -88,20 +100,22 @@ function ThreadsTab({ place, pitch, contacts, sharedDomain }: { place: Place; pi
   const [domainOn, setDomainOn] = useState(false);
   const [hits, setHits] = useState<ThreadHit[] | null>(null);
   const [linked, setLinked] = useState<Record<string, string>>({});
+  const [kept, setKept] = useState<string[]>([]);
   const target = { kind: place.kind, id: place.id };
 
   async function search() {
     const addresses = contacts.filter((c) => pressed.includes(c.id)).flatMap((c) => c.emails);
-    const r = await call<ThreadHit[]>("email.search", { target, q: text.trim() || undefined, addresses, ...(domainOn && sharedDomain ? { domain: sharedDomain } : {}) });
-    if (r) { setHits(r); setLinked({}); }
+    const r = await call<ThreadHit[]>("email.search", { target, q: text.trim() || undefined, addresses, ...(domainOn && sharedDomain ? { domain: sharedDomain } : {}), ...(pitch ? { pitchId: pitch } : {}) });
+    if (r) { setHits(r); setLinked({}); setKept([]); }
   }
   useEffect(() => { void search(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const nameOf = (addr: string) => b.contacts.find((c) => c.emails.includes(addr))?.name ?? addr;
   const linkedId = (h: ThreadHit) => linked[h.threadId] ?? h.linkedId;
   async function link(h: ThreadHit) {
-    const r = await call<{ id: string }>("email.link", { threadId: h.threadId, target, ...(pitch ? { pitchId: pitch } : {}) });
-    if (r) setLinked((l) => ({ ...l, [h.threadId]: r.id }));
+    const r = await call<{ id?: string; tracked: number }>("email.link", { threadId: h.threadId, target, ...(pitch ? { pitchId: pitch } : {}) });
+    if (r?.id) setLinked((l) => ({ ...l, [h.threadId]: r.id! }));
+    if (r && h.unsent) setKept((k) => [...k, h.threadId]);
     return r?.id;
   }
   async function reply(h: ThreadHit) {
@@ -128,36 +142,46 @@ function ThreadsTab({ place, pitch, contacts, sharedDomain }: { place: Place; pi
         </div>
       )}
       <ErrorBox error={error} />
-      {hits !== null && hits.length === 0 && <div className="empty" data-testid="gmail-none"><span>Nothing in Gmail matches. Try other words, or press another name.</span></div>}
+      {hits !== null && hits.length === 0 && <div className="empty" data-testid="gmail-none"><span>Nothing in Gmail matches, sent, draft or scheduled. Try other words, or press another name.</span></div>}
       {hits !== null && hits.length > 0 && (
         <div className="grid gap-1" data-testid="gmail-results">
           {hits.map((h) => {
             const lid = linkedId(h);
             const who = h.participants.map(nameOf);
+            const u = h.unsent;
+            const unsentOnly = !!u && h.messageCount === 0;
+            const isKept = !!u && (h.tracked || kept.includes(h.threadId));
             return (
               <div key={h.threadId} className="flex flex-wrap items-start gap-3 rounded-xl border p-3" style={{ borderColor: "var(--line)" }} data-testid={`gmail-thread-${h.threadId}`}>
                 <span className="avatar" aria-hidden>{(who[0] ?? h.subject).charAt(0).toUpperCase()}</span>
                 <span className="grid min-w-0 flex-1 gap-0.5">
                   <span className="flex flex-wrap items-center gap-2">
                     <b className="truncate">{h.subject || "(no subject)"}</b>
+                    {u && <span className={u.state === "scheduled" ? "chip a" : "chip"} data-testid={`gmail-unsent-${h.threadId}`}>{u.state === "scheduled" ? `Scheduled · ${when(u.date, zone)}` : h.messageCount ? "Draft reply" : "Draft"}</span>}
                     {lid && <span className="chip g" data-testid={`gmail-linked-${h.threadId}`}>On this {place.word}</span>}
+                    {isKept && <span className="chip g" data-testid={`gmail-kept-${h.threadId}`}>Kept on this pitch</span>}
                   </span>
-                  <span className="s truncate">{who.join(", ")} · {h.messageCount} message{h.messageCount === 1 ? "" : "s"}</span>
+                  <span className="s truncate">{who.join(", ")} · {h.messageCount ? `${h.messageCount} message${h.messageCount === 1 ? "" : "s"}` : "Not sent yet"}</span>
                   <span className="line-clamp-2 text-sm">{h.snippet}</span>
                 </span>
-                <span className="s shrink-0">{short(h.lastDate, zone)}</span>
+                <span className="s shrink-0">{short(u?.state === "scheduled" && unsentOnly ? u.date : h.lastDate, zone)}</span>
                 <span className="flex w-full flex-wrap justify-end gap-2 sm:w-auto">
-                  {lid
-                    ? <Link href={`/booking/email/${lid}`} className="btn sm" data-testid={`gmail-open-${h.threadId}`}>Open</Link>
-                    : <button type="button" className="btn sm" disabled={busy} onClick={() => void link(h)} data-testid={`gmail-link-${h.threadId}`}>Link to {place.word}</button>}
-                  <button type="button" className="btn sm acc" disabled={busy} onClick={() => void reply(h)} data-testid={`gmail-reply-${h.threadId}`}>Reply from Roadie</button>
+                  {u && <a href={gmailDraftLink({ account, messageId: u.messageId, scheduled: u.state === "scheduled" })} target="_blank" rel="noreferrer" className="btn sm" data-testid={`gmail-open-gmail-${h.threadId}`}>Open in Gmail</a>}
+                  {unsentOnly
+                    ? pitch && !isKept && <button type="button" className="btn sm acc" disabled={busy} onClick={() => void link(h)} data-testid={`gmail-link-${h.threadId}`}>Link to pitch</button>
+                    : <>
+                        {lid && (!u || !pitch || isKept)
+                          ? <Link href={`/booking/email/${lid}`} className="btn sm" data-testid={`gmail-open-${h.threadId}`}>Open</Link>
+                          : <button type="button" className="btn sm" disabled={busy} onClick={() => void link(h)} data-testid={`gmail-link-${h.threadId}`}>Link to {lid ? "pitch" : place.word}</button>}
+                        <button type="button" className="btn sm acc" disabled={busy} onClick={() => void reply(h)} data-testid={`gmail-reply-${h.threadId}`}>Reply from Roadie</button>
+                      </>}
                 </span>
               </div>
             );
           })}
         </div>
       )}
-      <p className="s">Linking a thread puts it on this {place.word}&apos;s Email card and starts watching it for replies. Replying from Roadie links it too.</p>
+      <p className="s">Drafts and scheduled emails show too. Linking a thread puts it on this {place.word}&apos;s Email card and starts watching it for replies; replying from Roadie links it too.{pitch ? " Linking one that isn't sent yet keeps it on this pitch until Gmail sends it, then logs it." : " To keep one that isn't sent yet, search from its pitch."}</p>
     </div>
   );
 }

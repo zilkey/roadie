@@ -110,6 +110,53 @@ test("email.suggest finds what was sent outside Roadie, best first; linking it t
   await assert.rejects(cmd("email.suggest", { pitchId: "nope" }), /not found/i);
 });
 
+test("email.search finds drafts and scheduled mail and says so; linking one from a pitch keeps it there until Gmail sends it", async () => {
+  const { venueId } = await pineHollow();
+  const target = { kind: "venue", id: venueId };
+  const { id: pitchId } = await cmd("pitches.flag", { kind: "venue", id: venueId });
+  const post = async (p: string, body: Record<string, unknown> = {}) => (await (await fetch(`${gmailUrl}${p}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })).json()) as Record<string, any>;
+  // Made in Gmail, not by Roadie: a draft, and one already scheduled for Monday.
+  const draft = await post("/drafts/gmail", { from: "rudy@example.com", to: ["rosa@pinehollow.example"], subject: "Spring at Pine Hollow", body: "Hi Rosa" });
+  const later = await post("/drafts/gmail", { from: "rudy@example.com", to: ["rosa@pinehollow.example"], subject: "Fall at Pine Hollow", body: "Hi again", scheduled: true, sendAt: "2031-03-03T14:02:00.000Z" });
+  // A sent thread with a draft reply waiting in it.
+  const sent = await sendRaw({ from: "rudy@example.com", to: ["rosa@pinehollow.example"], subject: "Summer?", body: "Hello" });
+  await post("/drafts", { from: "rudy@example.com", to: ["rosa@pinehollow.example"], subject: "Re: Summer?", body: "Following up", threadId: sent.threadId });
+
+  const hits = await cmd("email.search", { target, pitchId });
+  const by = (id: string) => hits.find((h: any) => h.threadId === id);
+  assert.equal(by(draft.threadId).unsent.state, "draft");
+  assert.equal(by(draft.threadId).messageCount, 0, "nothing sent yet");
+  assert.deepEqual(by(later.threadId).unsent, { state: "scheduled", date: "2031-03-03T14:02:00.000Z", messageId: later.messageId });
+  assert.equal(hits[0].threadId, later.threadId, "dated when it goes, so newest");
+  assert.equal(by(sent.threadId).unsent.state, "draft");
+  assert.equal(by(sent.threadId).messageCount, 1, "the draft reply isn't counted");
+
+  // Nothing sent and no pitch: nothing to link it to yet.
+  await assert.rejects(cmd("email.link", { threadId: later.threadId, target }), /is sent yet/i);
+  // From the pitch: kept there, no thread made; scheduled mail has no draft id.
+  assert.deepEqual(await cmd("email.link", { threadId: later.threadId, target, pitchId }), { tracked: 1 });
+  assert.deepEqual(await cmd("email.link", { threadId: draft.threadId, target, pitchId }), { tracked: 1 });
+  assert.deepEqual(await cmd("email.link", { threadId: draft.threadId, target, pitchId }), { tracked: 0 }, "kept once");
+  const kept = (await db.get(SYS, "pitches", pitchId))!.gmailDrafts as any[];
+  assert.deepEqual(kept.map((d) => [d.subject, d.draftId, !!d.scheduled]), [["Fall at Pine Hollow", "", true], ["Spring at Pine Hollow", draft.id, false]]);
+  assert.equal(await db.get(SYS, "emailThreads", `${TEST_ARTIST}__${later.threadId}`), null);
+  const again = await cmd("email.search", { target, pitchId });
+  assert.ok(again.find((h: any) => h.threadId === later.threadId).tracked);
+  // A sent thread with a draft reply: linked as always, and the reply kept.
+  const linked = await cmd("email.link", { threadId: sent.threadId, target, pitchId });
+  assert.ok(linked.id);
+  assert.equal(linked.tracked, 1);
+
+  // Still scheduled: left alone. Then Gmail sends it: logged with Gmail's time and taken off the pitch.
+  assert.deepEqual(await cmd("email.checkDrafts", { pitchIds: [pitchId] }), { sent: 0, pending: 3, gone: 0 });
+  await post(`/drafts/${later.id}/send`, { date: "2031-03-03T14:02:00.000Z" });
+  assert.deepEqual(await cmd("email.checkDrafts", { pitchIds: [pitchId] }), { sent: 1, pending: 2, gone: 0 });
+  const left = (await db.get(SYS, "pitches", pitchId))!.gmailDrafts as any[];
+  assert.deepEqual(left.map((d) => d.subject).sort(), ["Re: Summer?", "Spring at Pine Hollow"]);
+  const log = (await db.list(SYS, `pitches/${pitchId}/activity`)).filter((a) => a.type === "emailSent");
+  assert.deepEqual(log.map((a) => a.gmail.subject), ["Fall at Pine Hollow"]);
+});
+
 test("email.people groups by the other party, reads title and phone from the signature, and knows contacts", async () => {
   const { venueId, contactId } = await pineHollow();
   const target = { kind: "venue", id: venueId };

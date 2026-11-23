@@ -13,6 +13,8 @@ export interface MailInput { account: string; to: string[]; cc?: string[]; subje
 export interface MailMessage {
   id: string; threadId: string; account: string; direction: "sent" | "received";
   from: string; /** Display name from the From header, "" when none. */ fromName: string; to: string[]; cc: string[]; subject: string; body: string; /** The text/html part as sent (not sanitized), when there is one. */ html?: string; date: string;
+  /** Not sent yet: a draft, or waiting on Gmail's Schedule send (then `date` is when it goes). Only search results carry these; threads leave them out. */
+  unsent?: "draft" | "scheduled";
 }
 export interface MailDraft { id: string; account: string; to: string[]; cc: string[]; subject: string; body: string; threadId?: string; date: string; /** The draft's message: Gmail's web link opens the draft by it. */ messageId?: string }
 /** A draft Roadie made, as Gmail has it now: still a draft, scheduled with Gmail's Schedule send, sent (the message, from the thread), or gone (deleted, never sent). */
@@ -27,9 +29,11 @@ export interface GmailService {
   /** `max`: at most this many, newest first (Gmail's default page is 50). */
   listMessages(opts?: { account?: string; threadId?: string; q?: string; max?: number }): Promise<MailMessage[]>;
   listThreads(account?: string): Promise<MailThread[]>;
-  /** `account` is the mailbox the thread is in (the real API needs it; the fake has one shared view). */
-  getThread(id: string, account?: string): Promise<MailThread>;
-  /** Where a draft Roadie made stands now (see DraftStatus). */
+  /** `account` is the mailbox the thread is in (the real API needs it; the fake has one shared view). Sent and received mail only, unless `unsent` asks for its drafts and scheduled mail too (marked `unsent`). */
+  getThread(id: string, account?: string, opts?: { unsent?: boolean }): Promise<MailThread>;
+  /** The draft whose message this is, when it is still in Drafts (scheduled mail has left Drafts). */
+  draftIdOf(account: string, messageId: string): Promise<string | undefined>;
+  /** Where a draft Roadie made stands now (see DraftStatus). An empty draftId (mail found already scheduled) skips the Drafts check. */
   draftStatus(account: string, d: DraftRef): Promise<DraftStatus>;
   /** The Gmail signature (HTML, as Gmail stores it) of the account's primary address; "" when none is set. Throws IntegrationError(403) when the grant can't read settings. */
   getSignature(account: string): Promise<string>;
@@ -56,8 +60,9 @@ export function fakeGmailClient(baseUrl: string): GmailService {
       return max ? all.sort((a, b) => b.date.localeCompare(a.date)).slice(0, max) : all;
     }),
     listThreads: (account) => call<MailThread[]>("GET", "/threads", { query: { account } }).then((r) => r.map((t) => ({ ...t, messages: t.messages.map(named) }))),
-    getThread: (id) => call<MailThread>("GET", `/threads/${encodeURIComponent(id)}`).then((t) => ({ ...t, messages: t.messages.map(named) })),
-    draftStatus: (account, d) => call<DraftStatus>("GET", `/drafts/${encodeURIComponent(d.draftId)}/status`, { query: { account, messageId: d.messageId, threadId: d.threadId, at: d.at } })
+    getThread: (id, _account, opts) => call<MailThread>("GET", `/threads/${encodeURIComponent(id)}`, { query: opts?.unsent ? { unsent: "1" } : {} }).then((t) => ({ ...t, messages: t.messages.map(named) })),
+    draftIdOf: (account, messageId) => call<MailDraft[]>("GET", "/drafts", { query: { account } }).then((r) => r.find((d) => d.messageId === messageId)?.id),
+    draftStatus: (account, d) => call<DraftStatus>("GET", `/drafts/${encodeURIComponent(d.draftId || "-")}/status`, { query: { account, messageId: d.messageId, threadId: d.threadId, at: d.at } })
       .then((r) => (r.state === "sent" ? { ...r, message: named(r.message), thread: { ...r.thread, messages: r.thread.messages.map(named) } } : r)),
     async getSignature(account) {
       const r = await call<{ sendAs?: { isPrimary?: boolean; signature?: string }[] }>("GET", "/settings/sendAs", { query: { account } });
@@ -93,10 +98,23 @@ function textOf(p: GPart | undefined): string {
   return html ? decode(html.body?.data).replace(/<br\s*\/?>|<\/p>/gi, "\n").replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").trim() : "";
 }
 
+/**
+ * Not sent yet. A draft has DRAFT. Mail waiting on Schedule send has no SENT and no DRAFT, often no labels at all (the API
+ * shows no SCHEDULED label: Ingrid's mailbox, 2026-11-22), and its internalDate is when it will go, so it is in the future;
+ * nothing received is dated ahead.
+ */
+export function unsentOf(m: { labelIds?: string[]; internalDate?: string }, now = Date.now()): "draft" | "scheduled" | undefined {
+  const l = m.labelIds ?? [];
+  if (l.includes("DRAFT")) return "draft";
+  if (l.includes("SCHEDULED")) return "scheduled";
+  return !l.includes("SENT") && Number(m.internalDate ?? 0) > now ? "scheduled" : undefined;
+}
+
 function toMessage(m: GMessage, account: string): MailMessage {
   const p = m.payload;
+  const unsent = unsentOf(m);
   return {
-    id: m.id, threadId: m.threadId, account, direction: m.labelIds?.includes("SENT") ? "sent" : "received",
+    id: m.id, threadId: m.threadId, account, direction: unsent || m.labelIds?.includes("SENT") ? "sent" : "received", ...(unsent ? { unsent } : {}),
     from: addresses(header(p, "from"))[0] ?? "", fromName: displayName(header(p, "from")), to: addresses(header(p, "to")), cc: addresses(header(p, "cc")),
     subject: header(p, "subject"), body: textOf(p), ...(htmlOf(p) ? { html: htmlOf(p) } : {}), date: new Date(Number(m.internalDate ?? Date.now())).toISOString(),
   };
@@ -129,10 +147,10 @@ export function googleGmail(tokenFor: (account: string, force?: boolean) => Prom
   };
   const getMessage = (account: string, id: string) => callAs(account)<GMessage>("GET", `/messages/${encodeURIComponent(id)}`, { query: { format: "full" } });
 
-  async function getThread(id: string, account?: string): Promise<MailThread> {
+  async function getThread(id: string, account?: string, opts?: { unsent?: boolean }): Promise<MailThread> {
     const t = await callAs(account)<{ id: string; messages?: GMessage[] }>("GET", `/threads/${encodeURIComponent(id)}`, { query: { format: "full" } });
     // Not yet sent: a draft, or a message waiting on Gmail's Schedule send.
-    const messages = (t.messages ?? []).filter((m) => !m.labelIds?.includes("DRAFT") && !m.labelIds?.includes("SCHEDULED")).map((m) => toMessage(m, account!));
+    const messages = (t.messages ?? []).filter((m) => opts?.unsent || !unsentOf(m)).map((m) => toMessage(m, account!));
     return { id: t.id, subject: messages[0]?.subject ?? "", messages, lastDate: messages[messages.length - 1]?.date ?? "" };
   }
 
@@ -176,16 +194,26 @@ export function googleGmail(tokenFor: (account: string, force?: boolean) => Prom
       return Promise.all((r.threads ?? []).map((t) => getThread(t.id, account)));
     },
     getThread,
+    async draftIdOf(account, messageId) {
+      let pageToken: string | undefined;
+      for (let page = 0; page < 5; page++) {
+        const r = await callAs(account)<{ drafts?: { id: string; message: { id: string } }[]; nextPageToken?: string }>("GET", "/drafts", { query: { maxResults: "500", ...(pageToken ? { pageToken } : {}) } });
+        const hit = r.drafts?.find((d) => d.message.id === messageId);
+        if (hit || !r.nextPageToken) return hit?.id;
+        pageToken = r.nextPageToken;
+      }
+      return undefined;
+    },
     async draftStatus(account, d) {
       const missing = (e: unknown) => e instanceof IntegrationError && e.status === 404;
       // Still in Drafts: not sent, not scheduled (Schedule send takes it out of Drafts).
-      const still = await callAs(account)("GET", `/drafts/${encodeURIComponent(d.draftId)}`, { query: { format: "minimal" } }).then(() => true, (e) => { if (missing(e)) return false; throw e; });
+      const still = d.draftId && await callAs(account)("GET", `/drafts/${encodeURIComponent(d.draftId)}`, { query: { format: "minimal" } }).then(() => true, (e) => { if (missing(e)) return false; throw e; });
       if (still) return { state: "draft" };
       const t = await callAs(account)<{ id: string; messages?: GMessage[] }>("GET", `/threads/${encodeURIComponent(d.threadId)}`, { query: { format: "minimal" } })
         .catch((e) => { if (missing(e)) return null; throw e; });
       if (!t) return { state: "gone" };
       const msgs = t.messages ?? [];
-      const sent = msgs.filter((m) => m.labelIds?.includes("SENT") && !m.labelIds.includes("DRAFT") && !m.labelIds.includes("SCHEDULED"));
+      const sent = msgs.filter((m) => m.labelIds?.includes("SENT") && !unsentOf(m));
       // Sending a draft keeps its message id; failing that, the first sent message since the draft was made.
       const since = Date.parse(d.at) - 60_000;
       const hit = sent.find((m) => m.id === d.messageId) ?? sent.filter((m) => Number(m.internalDate ?? 0) >= since).sort((a, b) => Number(a.internalDate) - Number(b.internalDate))[0];
@@ -194,7 +222,9 @@ export function googleGmail(tokenFor: (account: string, force?: boolean) => Prom
         const message = thread.messages.find((m) => m.id === hit.id) ?? toMessage(await getMessage(account, hit.id), account);
         return { state: "sent", message, thread };
       }
-      return { state: msgs.some((m) => m.labelIds?.includes("SCHEDULED")) ? "scheduled" : "gone" };
+      // Cancel send in Gmail puts a scheduled message back in Drafts, under a new draft id.
+      const left = msgs.map((m) => unsentOf(m)).filter(Boolean);
+      return { state: left.includes("scheduled") ? "scheduled" : left.includes("draft") ? "draft" : "gone" };
     },
     async getSignature(account) {
       const r = await callAs(account)<{ sendAs?: { sendAsEmail?: string; isPrimary?: boolean; signature?: string }[] }>("GET", "/settings/sendAs");

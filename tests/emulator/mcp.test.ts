@@ -186,14 +186,16 @@ test("MCP can draft an email but never send one", async () => {
   void artist;
   const p = await db.create(admin, "pitches", { target: { kind: "venue", id: venueId, name: "Marisol" }, status: "toPitch", personnel: [], showIds: [] });
   const gmail = gmailClient();
-  const before = (await gmail.listMessages()).length;
+  // Like Gmail's search, listMessages finds drafts too: count only what went.
+  const sentCount = async () => (await gmail.listMessages()).filter((m) => !m.unsent).length;
+  const before = await sentCount();
 
   const ok = parse(await callTool("pitches.draftEmail", { id: p.id, to: ["booker@example.com"], subject: "Hello", body: "We would love to play." }, async () => mcpCtx()));
   assert.equal(ok.result.sent, false);
   const drafts = await gmail.listDrafts();
   assert.equal(drafts.length, 1);
   assert.equal(drafts[0].subject, "Hello");
-  assert.equal((await gmail.listMessages()).length, before, "nothing was sent");
+  assert.equal(await sentCount(), before, "nothing was sent");
   const acts = await db.list(SYS, `pitches/${p.id}/activity`);
   assert.ok(acts.some((a) => a.type === "note" && /drafted \(not sent\)/.test(a.text)));
   assert.ok(!acts.some((a) => a.type === "emailSent"));
@@ -204,7 +206,7 @@ test("MCP can draft an email but never send one", async () => {
   const send = await callTool("pitches.sendEmail", { id: p.id, to: ["booker@example.com"], subject: "Hello", body: "Hi" }, async () => mcpCtx());
   assert.equal(parse(send).error.code, "unknown_tool");
   assert.deepEqual(registry["pitches.sendEmail"].roles, ["admin"]);
-  assert.equal((await gmail.listMessages()).length, before);
+  assert.equal(await sentCount(), before);
 });
 
 test("asking who is free through MCP drafts the emails instead of sending them", async () => {
@@ -214,7 +216,7 @@ test("asking who is free through MCP drafts the emails instead of sending them",
   assert.deepEqual(r.result.emailed, []);
   const gmail = gmailClient();
   assert.equal((await gmail.listDrafts()).length, 1);
-  assert.equal((await gmail.listMessages()).filter((x) => x.direction === "sent").length, 0);
+  assert.equal((await gmail.listMessages()).filter((x) => x.direction === "sent" && !x.unsent).length, 0);
 });
 
 // ---------- over HTTP (the Next route handler, called in-process) ----------

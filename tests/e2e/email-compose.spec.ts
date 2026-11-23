@@ -12,7 +12,7 @@ async function openPitch(page: Page, place: string) {
   await page.getByTestId("pitch-list").locator("tr", { hasText: place }).locator("[data-testid^='flag-'][data-flagged='1']").click();
   await expect(page.getByTestId(/^pitch-(page|body)$/)).toBeVisible();
 }
-type Sent = { subject: string; to: string[]; html?: string; body: string };
+type Sent = { subject: string; to: string[]; html?: string; body: string; /** Search finds drafts too, like Gmail's. */ unsent?: string };
 
 test("compose: contacts as chips, a template, an unknown address becomes a contact, bold, the Gmail signature, send", async ({ page, request }) => {
   await request.put(`${GMAIL}/settings/signature`, { data: { account: "rudy@example.com", signature: "<div>Rudy on the road crew</div>" } });
@@ -152,7 +152,7 @@ test("compose: a bare address stays bare on Not now, Move to Pitched, and Cancel
   const drafts = (await (await request.get(`${GMAIL}/drafts?account=rudy@example.com`)).json()) as { subject: string }[];
   expect(drafts.some((d) => d.subject === subject)).toBe(true);
   const before = (await (await request.get(`${GMAIL}/messages?account=rudy@example.com`)).json()) as Sent[];
-  expect(before.some((m) => m.subject === subject)).toBe(false);
+  expect(before.some((m) => m.subject === subject && !m.unsent)).toBe(false);
 
   // Already Pitched (a retry, or an earlier spec) hides the checkbox; otherwise it is on by default.
   if (await page.getByTestId("mark-pitched").count()) await expect(page.getByTestId("mark-pitched")).toBeChecked();

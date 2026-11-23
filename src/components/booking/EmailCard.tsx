@@ -77,10 +77,10 @@ export function EmailCard({ target, pitchId }: { target: { kind: "venue" | "prom
       {drafts.length > 0 && (
         <div className="grid gap-1" data-testid="email-drafts">
           {drafts.map((d) => (
-            <div key={d.draftId} className="flex flex-wrap items-center gap-2 rounded-xl border border-dashed p-3" style={{ borderColor: "var(--line)" }} data-testid={`email-draft-${d.draftId}`}>
-              <span className={d.scheduled ? "chip a" : "chip"} data-testid={`email-draft-state-${d.draftId}`}>{d.scheduled ? "Scheduled in Gmail" : "Draft in Gmail"}</span>
+            <div key={d.draftId || d.messageId} className="flex flex-wrap items-center gap-2 rounded-xl border border-dashed p-3" style={{ borderColor: "var(--line)" }} data-testid={`email-draft-${d.draftId || d.messageId}`}>
+              <span className={d.scheduled ? "chip a" : "chip"} data-testid={`email-draft-state-${d.draftId || d.messageId}`}>{d.scheduled ? "Scheduled in Gmail" : "Draft in Gmail"}</span>
               <span className="grid min-w-0 flex-1"><b className="truncate">{d.subject || "(no subject)"}</b><span className="s truncate">To {d.to}</span></span>
-              <a href={gmailDraftLink(d)} target="_blank" rel="noreferrer" className="btn sm" data-testid={`email-draft-open-${d.draftId}`}>Open in Gmail</a>
+              <a href={gmailDraftLink(d)} target="_blank" rel="noreferrer" className="btn sm" data-testid={`email-draft-open-${d.draftId || d.messageId}`}>Open in Gmail</a>
             </div>
           ))}
         </div>

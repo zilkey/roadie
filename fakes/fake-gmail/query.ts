@@ -1,9 +1,9 @@
 /**
  * The fake's tiny version of Gmail's search `q`: words and "quoted phrases" match the subject and body, `from:x` and `to:x`
  * match an address (`@domain` too; from: also the sender's name) (to: also looks at cc), terms next to each other are AND, `OR` is the lower-precedence alternative and
- * parentheses group. `in:sent` / `in:inbox` match the direction. A q with none of that is one plain substring, as before.
+ * parentheses group. `in:sent` / `in:inbox` match the direction (sent mail only, like Gmail), `in:drafts` / `in:scheduled` the unsent. A q with none of that is one plain substring, as before.
  */
-export interface QueryTarget { from: string; fromName?: string; to: string[]; cc: string[]; subject: string; body: string; direction?: "sent" | "received" }
+export interface QueryTarget { from: string; fromName?: string; to: string[]; cc: string[]; subject: string; body: string; direction?: "sent" | "received"; unsent?: "draft" | "scheduled" }
 type Node = { t: "word"; v: string } | { t: "from" | "to"; v: string } | { t: "in"; v: string } | { t: "and" | "or"; l: Node; r: Node };
 
 export function tokenize(q: string): string[] {
@@ -26,7 +26,7 @@ export function parseQuery(q: string): Node | null {
     const unq = (s: string) => s.replace(/^"|"$/g, "").toLowerCase();
     if (m && !m[2] && toks[i] === "(") return atom(m[1].toLowerCase() as "from" | "to");
     if (m) return { t: m[1].toLowerCase() as "from" | "to", v: unq(m[2]) };
-    const box = /^in:(sent|inbox)$/i.exec(tok);
+    const box = /^in:(sent|inbox|drafts|scheduled)$/i.exec(tok);
     if (box) return { t: "in", v: box[1].toLowerCase() };
     return field ? { t: field, v: unq(tok) } : { t: "word", v: unq(tok) };
   }
@@ -65,7 +65,7 @@ export function matches(q: string | null | undefined, m: QueryTarget): boolean {
       case "word": return text.includes(n.v);
       case "from": return m.from.toLowerCase().includes(n.v) || (m.fromName ?? "").toLowerCase().includes(n.v); // like Gmail, from: also finds a display name
       case "to": return [...m.to, ...m.cc].some((a) => a.toLowerCase().includes(n.v));
-      case "in": return (m.direction ?? "received") === (n.v === "sent" ? "sent" : "received");
+      case "in": return n.v === "drafts" ? m.unsent === "draft" : n.v === "scheduled" ? m.unsent === "scheduled" : !m.unsent && (m.direction ?? "received") === (n.v === "sent" ? "sent" : "received");
       case "and": return ev(n.l) && ev(n.r);
       case "or": return ev(n.l) || ev(n.r);
     }

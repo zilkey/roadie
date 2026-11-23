@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { matches } from "../../fakes/fake-gmail/query";
 import { signatureOf, nameFromAddress } from "@/lib/email-signature";
 import { threadsQuery, groupPeople, groupThreads, rankSuggestions, sentQuery } from "@/server/commands/email";
-import type { MailMessage } from "@/server/integrations/gmail";
+import { unsentOf, type MailMessage } from "@/server/integrations/gmail";
 import { isExcluded } from "@/server/assistant/policy";
 
 test("signatureOf: phone from any line, title from the line after the name; three real shapes and none", () => {
@@ -76,4 +76,25 @@ test("isPerson: no-reply, bounce and notification addresses are robots", async (
   for (const a of ["noreply@x.com", "no-reply@x.com", "do-not-reply@x.com", "donotreply@x.com", "mailer-daemon@x.com", "bounces+123@x.com", "notifications@x.com", "calendar-notification@google.com", "a@noreply.github.com", "info@email.squarespace.com"])
     assert.equal(isPerson(a), false, a);
   for (const a of ["rosa@pinehollow.example", "booking@mainstagebrewing.com", "noreen@x.com", "replyguy@x.com"]) assert.equal(isPerson(a), true, a);
+});
+
+test("unsentOf: DRAFT is a draft; scheduled mail has no SENT or DRAFT and is dated ahead (Gmail shows no SCHEDULED label)", () => {
+  const now = Date.parse("2026-11-22T12:00:00Z");
+  assert.equal(unsentOf({ labelIds: ["DRAFT"], internalDate: String(now - 1000) }, now), "draft");
+  assert.equal(unsentOf({ internalDate: String(now + 86_400_000) }, now), "scheduled", "no labels at all, as the real API gives it");
+  assert.equal(unsentOf({ labelIds: ["CATEGORY_PERSONAL"], internalDate: String(now + 60_000) }, now), "scheduled");
+  assert.equal(unsentOf({ labelIds: ["SCHEDULED"], internalDate: String(now - 1000) }, now), "scheduled");
+  assert.equal(unsentOf({ labelIds: ["SENT"], internalDate: String(now + 60_000) }, now), undefined);
+  assert.equal(unsentOf({ labelIds: [], internalDate: String(now - 1000) }, now), undefined, "an archived message from the past");
+});
+
+test("the fake's in: keeps sent and unsent apart; groupThreads names a thread's newest unsent email and counts only sent mail", () => {
+  const base = { from: "me@x.example", to: ["rosa@y.example"], cc: [], subject: "Hi", body: "b", direction: "sent" as const };
+  assert.equal(matches("in:sent", { ...base, unsent: "draft" }), false);
+  assert.equal(matches("in:drafts", { ...base, unsent: "draft" }), true);
+  assert.equal(matches("in:scheduled", { ...base, unsent: "scheduled" }), true);
+  const m = (id: string, date: string, unsent?: "draft" | "scheduled"): MailMessage => ({ id, threadId: "t1", account: "me@x.example", direction: "sent", from: "me@x.example", fromName: "", to: ["rosa@y.example"], cc: [], subject: "Hi", body: id, date, ...(unsent ? { unsent } : {}) });
+  const [h] = groupThreads([m("a", "2026-11-01T00:00:00Z"), m("b", "2026-11-30T16:00:00Z", "scheduled")], "me@x.example", new Map());
+  assert.equal(h.messageCount, 1);
+  assert.deepEqual(h.unsent, { state: "scheduled", date: "2026-11-30T16:00:00Z", messageId: "b" });
 });
