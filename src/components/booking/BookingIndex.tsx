@@ -461,13 +461,14 @@ export function BookingTable({ seg, rows, onFlag, sort = "name", onSort, q = "",
     const k = r.pitch && campaigns ? homeOf(r.pitch, campaigns) : null;
     const into = fc.chosen;
     const t = r.pitch ? pitchCellText(r.pitch, configs) : null;
-    return <td className="nw" data-testid={`campaign-cell-${r.id}`}>{!k ? <Dash /> : k === ONGOING
+    // A bounded block: a long date list wraps here instead of stretching the column and pushing Name off to the right.
+    return <td data-testid={`campaign-cell-${r.id}`}><div className="cw">{!k ? <Dash /> : k === ONGOING
       ? <Link href={ROUTES.bookingPitches.path}>{ROUTES.bookingPitches.title}</Link>
       : <Link href={`/booking/campaigns/${k}`}>{campaigns!.get(k)?.name}</Link>}
       {t && <span className="sub" data-testid={`pitch-cell-${r.id}`}>{t.config} · {t.dates}</span>}
       {/* The page's campaign is chosen and this pitch is elsewhere: one click moves it (#82 S6). */}
       {k && into && into !== k && <span className="sub"><button type="button" className="link cursor-pointer border-0 bg-transparent p-0 text-[0.8125rem]" disabled={moving}
-        onClick={() => void move(r.pitch!.id, into)} data-testid={`move-to-${r.id}`}>Move to {fc.label(into)}</button></span>}</td>;
+        onClick={() => void move(r.pitch!.id, into)} data-testid={`move-to-${r.id}`}>Move to {fc.label(into)}</button></span>}</div></td>;
   };
   const reach = (r: ListRow) => (<>
     {!(compact && seg === "festivals") && <td>{r.email ? <a className="em" href={`mailto:${r.email}`}>{hl(r.email)}</a> : <Dash />}</td>}
