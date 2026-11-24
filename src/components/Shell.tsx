@@ -35,7 +35,6 @@ export const ADMIN_LINKS = [
   { href: "/admin/checklists", label: "Checklist templates", testid: "admin-checklists" },
   { href: "/admin/mcp", label: "Integrations", testid: "admin-mcp" },
   { href: "/admin/history", label: "Activity", testid: "admin-history" },
-  { href: "/admin/website", label: "Website", testid: "admin-website" },
 ];
 
 const NAV_LINK = "inline-flex h-11 shrink-0 items-center whitespace-nowrap rounded-xl px-3.5 text-[0.9375rem] no-underline";
@@ -95,7 +94,7 @@ function AccountItems({ name, role, signOut, signoutTestid, switchTo, phone, onE
  * Is the browser on this link's page? A link covers its own path and everything under it, except what a more specific
  * link already covers: /booking/templates is its own section, so /booking doesn't light up for it.
  */
-const NAV_HREFS = [...navFor("admin", [...SECTION_IDS], { fans: true }).map((n) => n.href), ...ADMIN_LINKS.map((l) => l.href), "/me"];
+const NAV_HREFS = [...navFor("admin", [...SECTION_IDS], { fans: true, sites: true }).map((n) => n.href), ...ADMIN_LINKS.map((l) => l.href), "/me"];
 function useOn() {
   const path = usePathname();
   const full = useHref();
@@ -116,8 +115,8 @@ function MoreItems({ items, testidPrefix = "more" }: { items: NavItem[]; testidP
 }
 
 /** "Customize menu": per section an on/off switch and up/down. Saved per user as it changes. */
-function EditMenuDialog({ open, onClose, role, hidden, order, fans }: { open: boolean; onClose(): void; role: string; hidden: SectionId[]; order: SectionId[]; fans: boolean }) {
-  const rows = navFor(role as "admin" | "member", order, { fans }).filter((n) => n.key !== "calendar") as (NavItem & { key: SectionId })[];
+function EditMenuDialog({ open, onClose, role, hidden, order, fans, sites }: { open: boolean; onClose(): void; role: string; hidden: SectionId[]; order: SectionId[]; fans: boolean; sites: boolean }) {
+  const rows = navFor(role as "admin" | "member", order, { fans, sites }).filter((n) => n.key !== "calendar") as (NavItem & { key: SectionId })[];
   const fail = (what: string, e: unknown) => toast({ key: "menu-edit", text: `Couldn't ${what}: ${e instanceof Error ? e.message : "error"}`, ms: 6000 });
   async function toggle(n: NavItem & { key: SectionId }) {
     try { await setSectionHidden(n.key, !hidden.includes(n.key)); } catch (e) { fail(`change ${n.label}`, e); }
@@ -173,8 +172,9 @@ function ShellFrame({ children }: { children: React.ReactNode }) {
   const { hidden, order } = useHiddenSections();
   const on = useOn();
   const fansOn = useFansOn();
+  const sitesOn = !!artist.doc?.features?.sites;
   const fansBadge = useFansBadge();
-  const all = navFor(profile.role, order, { fans: fansOn }).map((n) => (n.key === "fans" ? { ...n, badge: fansBadge } : n));
+  const all = navFor(profile.role, order, { fans: fansOn, sites: sitesOn }).map((n) => (n.key === "fans" ? { ...n, badge: fansBadge } : n));
   const away = (n: NavItem) => isSectionId(n.key) && hidden.includes(n.key);
   const shown = all.filter((n) => !away(n));
   const switchedOff = all.filter(away);
@@ -307,7 +307,7 @@ function ShellFrame({ children }: { children: React.ReactNode }) {
       </div>
       {/* Roadie: a column on the right on desktop, a pill + sheet on a phone */}
       {profile.role === "admin" && <Roadie />}
-      <EditMenuDialog open={editing} onClose={() => setEditing(false)} role={profile.role} hidden={hidden} order={order} fans={fansOn} />
+      <EditMenuDialog open={editing} onClose={() => setEditing(false)} role={profile.role} hidden={hidden} order={order} fans={fansOn} sites={sitesOn} />
     </div>
   );
 }

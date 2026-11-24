@@ -6,11 +6,11 @@ import { DEFAULT_HIDDEN, DEFAULT_SECTION_ORDER, defaultHidden, SECTION_IDS, norm
 const keys = (items: { key: string }[]) => items.map((n) => n.key);
 const label = (items: { key: string; label: string }[], key: string) => items.find((n) => n.key === key)?.label;
 
-test("admin gets Calendar then all fourteen sections in the default order, with Money (Fans when the artist has it on)", () => {
-  const nav = navFor("admin", [...DEFAULT_SECTION_ORDER], { fans: true });
+test("admin gets Calendar then all fifteen sections in the default order, with Money (Fans and Website when the artist has them on)", () => {
+  const nav = navFor("admin", [...DEFAULT_SECTION_ORDER], { fans: true, sites: true });
   assert.deepEqual(keys(nav), ["calendar", ...SECTION_IDS]);
-  assert.equal(SECTION_IDS.length, 14);
-  assert.deepEqual(keys(navFor("admin", [...DEFAULT_SECTION_ORDER])), ["calendar", ...SECTION_IDS.filter((s) => s !== "fans")]);
+  assert.equal(SECTION_IDS.length, 15);
+  assert.deepEqual(keys(navFor("admin", [...DEFAULT_SECTION_ORDER])), ["calendar", ...SECTION_IDS.filter((s) => s !== "fans" && s !== "website")]);
   assert.equal(label(nav, "money"), "Money");
 });
 
@@ -35,16 +35,23 @@ test("members see Fans (counts only) when it is on", () => {
 
 test("a custom order is respected; sections it leaves out are appended", () => {
   const order = normalizeOrder(["money", "songs"]);
-  assert.deepEqual(order, ["money", "songs", "shows", "booking", "contacts", "templates", "tours", "releases", "setlists", "rehearsals", "stagePlots", "fans", "posts", "todos"]);
-  assert.deepEqual(keys(navFor("admin", order, { fans: true })), ["calendar", ...order]);
+  assert.deepEqual(order, ["money", "songs", "shows", "booking", "contacts", "templates", "tours", "releases", "setlists", "rehearsals", "stagePlots", "fans", "posts", "todos", "website"]);
+  assert.deepEqual(keys(navFor("admin", order, { fans: true, sites: true })), ["calendar", ...order]);
   assert.deepEqual(keys(navFor("member", order)), ["calendar", "money", "songs", "shows", "tours", "setlists", "rehearsals", "stagePlots"]);
 });
 
 test("templates, contacts, releases, setlists, rehearsals, stage plots and posts start hidden", () => {
-  assert.deepEqual([...DEFAULT_HIDDEN], ["templates", "contacts", "releases", "setlists", "rehearsals", "stagePlots", "posts", "todos"]);
+  assert.deepEqual([...DEFAULT_HIDDEN], ["templates", "contacts", "releases", "setlists", "rehearsals", "stagePlots", "posts", "todos", "website"]);
   assert.deepEqual(defaultHidden("admin"), [...DEFAULT_HIDDEN]);
 });
 
 test("a member starts with Rehearsals in the nav and My money in More", () => {
   assert.deepEqual(defaultHidden("member"), ["templates", "setlists", "stagePlots", "money"]);
+});
+
+test("Website is for admins of an artist with sites on, and starts in More", () => {
+  assert.ok(keys(navFor("admin", [...DEFAULT_SECTION_ORDER], { sites: true })).includes("website"));
+  assert.ok(!keys(navFor("admin", [...DEFAULT_SECTION_ORDER])).includes("website"));
+  assert.ok(!keys(navFor("member", [...DEFAULT_SECTION_ORDER], { sites: true })).includes("website"));
+  assert.ok(defaultHidden("admin").includes("website"));
 });

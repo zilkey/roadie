@@ -25,7 +25,7 @@ Taken differently, for now:
 - **The fake Hosting API is in process** (globalThis), not an HTTP server under `fakes/`.
 - **Publish runs through the normal command route**, not a separate `/api/sites/release` with a 300-second limit. Only the first
   publish of a site uploads much, and that one ran from the script.
-- **Website is under Settings** (`/admin/website`, shown when `artists.features.sites` is on), not a main-nav section.
+- **Website is a main-menu section** (`/website`, admins only, shown when `artists.features.sites` is on). It starts in More; Customize menu can move it into the bar.
 - **No domains screen** (phase 5): `ingridavison.com` still points at Bandzoogle.
 
 ## What it costs

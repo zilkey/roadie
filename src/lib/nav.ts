@@ -18,6 +18,7 @@ export const I = {
   posts: "M4 7h3l2-3h6l2 3h3v13H4zM12 17a4 4 0 100-8 4 4 0 000 8z",
   fans: "M16 19v-1.5a3.5 3.5 0 00-3.5-3.5h-5A3.5 3.5 0 004 17.5V19M10 11a3.5 3.5 0 100-7 3.5 3.5 0 000 7zM20 19v-1.5a3.5 3.5 0 00-2.5-3.35M15.5 4.2a3.5 3.5 0 010 6.6",
   todos: "M3 4h4v4H3zM3 14h4v4H3zM11 6h10M11 16h10",
+  website: "M12 21a9 9 0 100-18 9 9 0 000 18zM3 12h18M12 3a14 14 0 010 18M12 3a14 14 0 000 18",
   chevron: "M6 9l6 6 6-6",
   back: "M15 5l-7 7 7 7",
   up: "M6 15l6-6 6 6",
@@ -27,9 +28,10 @@ export type NavItem = { key: "calendar" | SectionId; href: string; label: string
 
 /**
  * Every section this role can open, Calendar first, the rest in the person's own order. Fans is there only when the artist has
- * turned `features.fans` on (the Fan Page: the fan list for everyone, its price list, links and look for admins).
+ * turned `features.fans` on (the Fan Page: the fan list for everyone, its price list, links and look for admins), and Website only for
+ * admins of an artist with `features.sites` on (docs/designs/sites).
  */
-export function navFor(role: "admin" | "member", order: SectionId[], opts: { fans?: boolean } = {}): NavItem[] {
+export function navFor(role: "admin" | "member", order: SectionId[], opts: { fans?: boolean; sites?: boolean } = {}): NavItem[] {
   const all: Record<SectionId, NavItem> = {
     shows: { key: "shows", href: "/shows", label: "Shows", icon: I.shows },
     booking: { key: "booking", href: "/booking", label: "Booking", icon: I.booking },
@@ -45,8 +47,9 @@ export function navFor(role: "admin" | "member", order: SectionId[], opts: { fan
     fans: { key: "fans", href: "/fans", label: "Fan Page", icon: I.fans },
     posts: { key: "posts", href: "/posts", label: "Social Media", icon: I.posts },
     todos: { key: "todos", href: "/todos", label: "To Dos", icon: I.todos },
+    website: { key: "website", href: "/website", label: "Website", icon: I.website },
   };
-  // Booking, its email templates, Contacts, Releases, Posts and To Dos (for now) are admin-only.
-  const adminOnly = new Set<SectionId>(["booking", "contacts", "templates", "releases", "posts", "todos"]);
-  return [{ key: "calendar", href: "/calendar", label: "Calendar", icon: I.calendar }, ...order.filter((k) => (!adminOnly.has(k) || role === "admin") && (k !== "fans" || opts.fans)).map((k) => all[k])];
+  // Booking, its email templates, Contacts, Releases, Posts, To Dos (for now) and Website are admin-only.
+  const adminOnly = new Set<SectionId>(["booking", "contacts", "templates", "releases", "posts", "todos", "website"]);
+  return [{ key: "calendar", href: "/calendar", label: "Calendar", icon: I.calendar }, ...order.filter((k) => (!adminOnly.has(k) || role === "admin") && (k !== "fans" || opts.fans) && (k !== "website" || opts.sites)).map((k) => all[k])];
 }

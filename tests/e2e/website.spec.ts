@@ -11,9 +11,9 @@ async function signInAs(page: Page, key: string) {
 
 test("preview the draft, publish to staging, promote, roll back", async ({ page }) => {
   await signInAs(page, "rudy");
-  await page.getByTestId("band-menu").click();
-  await page.getByTestId("band-menu-settings").click();
-  await page.getByTestId("settings-nav-website").click();
+  await page.getByTestId("more-toggle").click();
+  await page.getByTestId("more-website").click();
+  await expect(page).toHaveURL(/\/website$/);
   await expect(page.getByTestId("page-title")).toHaveText("Website");
   await expect(page.getByTestId("site-live-url")).toHaveText("nora-quill.web.app");
 
