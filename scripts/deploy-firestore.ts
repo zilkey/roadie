@@ -13,6 +13,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { keyFile, OWNER, OWNER_GCLOUD } from "./prod-key";
 import { GoogleAuth } from "google-auth-library";
 
 const PROJECT = "roadie-prod-iab";
@@ -93,20 +94,6 @@ async function pruneLongBackups(client: Client) {
   }
 }
 
-/** The key file to deploy with, and a cleanup for a temporary copy. */
-function keyFile(): { file: string; done(): void } {
-  const json = process.env.GOOGLE_CREDENTIALS_JSON;
-  if (json) {
-    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "roadie-key-")), "key.json");
-    fs.writeFileSync(file, json, { mode: 0o600 });
-    return { file, done: () => fs.rmSync(path.dirname(file), { recursive: true, force: true }) };
-  }
-  const dir = ".secrets";
-  const found = fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => /^roadie-prod-iab-firebase-adminsdk-.*\.json$/.test(f)) : [];
-  if (!found.length) throw new Error("No key: set GOOGLE_CREDENTIALS_JSON, or put the service account key in .secrets/roadie-prod-iab-firebase-adminsdk-*.json.");
-  return { file: path.resolve(dir, found[0]), done: () => {} };
-}
-
 async function main() {
   const key = keyFile();
   try {
@@ -129,17 +116,14 @@ async function main() {
       const roles = [...new Map(list.map((m) => [m.role, m.title])).entries()];
       console.error(`\nOne time, as a project owner: https://console.cloud.google.com/iam-admin/iam?project=${PROJECT}`);
       console.error(`  find ${email}, click its pencil, and add the role${roles.length > 1 ? "s" : ""}: ${roles.map(([, t]) => t).join(", ")}.`);
-      console.error(`\nOr with gcloud, logged in as the owner:`);
-      for (const [role] of roles) console.error(`  gcloud projects add-iam-policy-binding ${PROJECT} --member=serviceAccount:${email} --role=${role} --condition=None`);
+      console.error(`\nOr with gcloud as the owner, in its own config folder (your other gcloud and Firebase logins are untouched):`);
+      console.error(`  ${OWNER_GCLOUD} auth login ${OWNER}   # once; skip if already signed in there`);
+      for (const [role] of roles) console.error(`  ${OWNER_GCLOUD} projects add-iam-policy-binding ${PROJECT} --account=${OWNER} --member=serviceAccount:${email} --role=${role} --condition=None`);
     };
     if (missing.length) {
-      const roles = [...new Map(missing.map((m) => [m.role, m.title])).entries()];
       console.error(`\n${email} is missing: ${missing.map((m) => m.permission).join(", ")}.`);
-      console.error(`\nOne time, as a project owner: https://console.cloud.google.com/iam-admin/iam?project=${PROJECT}`);
-      console.error(`  find ${email}, click its pencil, and add the role${roles.length > 1 ? "s" : ""}: ${roles.map(([, t]) => t).join(", ")}.`);
-      console.error(`\nOr with gcloud, logged in as the owner:`);
-      for (const [role] of roles) console.error(`  gcloud projects add-iam-policy-binding ${PROJECT} --member=serviceAccount:${email} --role=${role} --condition=None`);
-      console.error("\nNothing was deployed. Run this again once it's granted (it can take a minute to apply).");
+      grantHelp(missing);
+      console.error("\nNothing was deployed. Run this again once it's granted (it can take a minute or two to apply).");
       process.exit(1);
     }
 

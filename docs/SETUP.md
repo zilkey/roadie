@@ -80,9 +80,12 @@ deploys every push (AGENTS.md, rule 5). It uses the service-account key in
 `.secrets` so nobody has to log in, which needs that account to hold the Vertex AI User role once:
 
 ```sh
-gcloud projects add-iam-policy-binding roadie-prod-iab \
+CLOUDSDK_CONFIG=$HOME/.config/gcloud-roadie gcloud projects add-iam-policy-binding roadie-prod-iab --account=jeff@zilkey.com \
   --member=serviceAccount:firebase-adminsdk-fbsvc@roadie-prod-iab.iam.gserviceaccount.com --role=roles/aiplatform.user
 ```
+
+(Owner-only grants always run like this: as jeff@zilkey.com, in the separate `~/.config/gcloud-roadie` config folder,
+never the machine's default gcloud login, which belongs to other projects. See AGENTS.md, "Prod access".)
 
 `npm run check:roadie` is the same call through the Gemini API key in `.secrets` (its validation is stricter, which is
 useful, but that key's prepaid credit was empty on 2026-10-29).

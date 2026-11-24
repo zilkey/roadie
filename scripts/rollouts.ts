@@ -1,11 +1,12 @@
 /**
  * `npm run rollouts [-- <sha>]`: is a commit live? Lists App Hosting's latest rollouts of roadie-web-prod with the commit
  * each one built. With a sha (default: origin/main), waits up to 20 minutes for that commit's rollout to finish, then
- * exits 0 if it SUCCEEDED and 1 otherwise. Uses Application Default Credentials (in a cloud session, the key from
- * AGENTS.md via GOOGLE_APPLICATION_CREDENTIALS).
+ * exits 0 if it SUCCEEDED and 1 otherwise. Always the roadie-prod-iab service-account key (scripts/prod-key.ts), never the
+ * machine's gcloud login.
  */
 import { execSync } from "node:child_process";
 import { GoogleAuth } from "google-auth-library";
+import { keyFile } from "./prod-key";
 
 const BACKEND = "projects/roadie-prod-iab/locations/us-central1/backends/roadie-web-prod";
 const API = "https://firebaseapphosting.googleapis.com/v1";
@@ -13,7 +14,7 @@ interface Rollout { name: string; createTime: string; state: string; build: stri
 
 async function main() {
 const sha = process.argv[2] ?? execSync("git rev-parse origin/main", { encoding: "utf8" }).trim();
-const client = await new GoogleAuth({ scopes: ["https://www.googleapis.com/auth/cloud-platform"] }).getClient();
+const client = await new GoogleAuth({ keyFile: keyFile().file, scopes: ["https://www.googleapis.com/auth/cloud-platform"] }).getClient();
 const get = async <T>(url: string) => (await client.request<T>({ url })).data;
 
 async function latest(n: number) {

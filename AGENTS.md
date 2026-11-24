@@ -47,6 +47,26 @@ Jeff asks for something and walks away. When he comes back it should be done and
    the test when it is wrong or fragile (a fixed date, the machine's timezone, data other specs change), fix the app
    when the app is wrong. Never skip, quarantine or loosen a test just to get green. Ship only on fully green suites.
 
+## Prod access: the service-account key, never a personal login
+
+Every prod step runs as the `roadie-prod-iab` service account, by itself: `npm run deploy:firestore`, `npm run rollouts`,
+`scripts/sites.ts`, backups and migrations all find the key on their own (`scripts/prod-key.ts`: `GOOGLE_CREDENTIALS_JSON`,
+else `GOOGLE_APPLICATION_CREDENTIALS`, else `.secrets/roadie-prod-iab-firebase-adminsdk-*.json`). Never use this machine's
+default gcloud or Firebase CLI login: it belongs to other projects (Woven's), or has expired (`invalid_rapt`). For a raw
+`gcloud` call, use a scratch `CLOUDSDK_CONFIG` with `gcloud auth activate-service-account --key-file=<the key>`. In zsh,
+export variables; `env $VARS cmd` doesn't word-split.
+
+The one thing the key can't do is grant roles, to itself or anyone. The project owner is **jeff@zilkey.com**, signed in to
+gcloud in its own config folder, `~/.config/gcloud-roadie`, which leaves other projects' logins alone. Run owner grants
+yourself through it; don't hand Jeff commands to run:
+
+```sh
+CLOUDSDK_CONFIG=$HOME/.config/gcloud-roadie gcloud projects add-iam-policy-binding roadie-prod-iab --account=jeff@zilkey.com --member=serviceAccount:<sa> --role=<role> --condition=None
+```
+
+If that login has expired, ask Jeff to run `CLOUDSDK_CONFIG=$HOME/.config/gcloud-roadie gcloud auth login jeff@zilkey.com`
+once (never another account), then carry on. New roles take a minute or two to apply: retry a 403 before deciding it's missing.
+
 ## Cloud sessions: prod access is in the environment
 
 Claude Code cloud sessions on the "Roadie" environment have `GOOGLE_CREDENTIALS_JSON`: the `roadie-prod-iab` service account's key (JSON). `gcloud auth list` shows no account and `GOOGLE_APPLICATION_CREDENTIALS` is unset; that does **not** mean there's no prod access. To run a script against prod (a migration, a backup), write the variable to a file outside the repo without printing it, and point the script at it:
