@@ -99,11 +99,11 @@ test("an act's page lists where they've played, and the shortlist, relationship 
   await page.getByTestId("act-rel-openFor").click();
   await expect(page.getByTestId("act-rel-openFor")).toHaveAttribute("aria-pressed", "true");
   await expect(hint).toHaveText("Bigger than us: pitch them for an opening slot.");
-  await page.getByTestId("act-rel-peer").click();
+  await page.getByTestId("act-rel-cobill").click();
   await expect(hint).toHaveText("About our size: we open for them, they open for us.");
   await expect(page.getByTestId("act-rel-openFor")).toHaveAttribute("aria-pressed", "false");
-  await page.getByTestId("act-rel-peer").click();
-  await expect(page.getByTestId("act-rel-peer")).toHaveAttribute("aria-pressed", "false");
+  await page.getByTestId("act-rel-cobill").click();
+  await expect(page.getByTestId("act-rel-cobill")).toHaveAttribute("aria-pressed", "false");
   await expect(hint).toHaveText("Pick one, or leave it blank.");
 
   // the note saves
@@ -308,8 +308,8 @@ test("the booking search has an Acts section: the take dropdown works there, and
   await expect(acts.getByTestId(`act-row-${head}`)).toBeVisible();
   await expect(page.getByTestId("bucket-count-acts")).toHaveText("1");
   await expect(acts.locator("th", { hasText: "Sounds like" })).toHaveCount(0); // compact
-  await acts.getByTestId(`act-take-${head}`).selectOption("peer");
-  await expect(acts.getByTestId(`act-take-${head}`)).toHaveValue("peer");
+  await acts.getByTestId(`act-take-${head}`).selectOption("cobill");
+  await expect(acts.getByTestId(`act-take-${head}`)).toHaveValue("cobill");
   await acts.getByTestId(`act-take-${head}`).selectOption("");
   await expect(acts.getByTestId(`act-take-${head}`)).toHaveValue("");
   // a Not a fit act still turns up when it's searched for

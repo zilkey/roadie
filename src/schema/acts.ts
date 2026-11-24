@@ -40,12 +40,12 @@ export const LINEUP_LABEL: Record<ActLineup, string> = { solo: "Solo", band: "Ba
 /** The pill's next value on a click: unset → Band → Solo → unset. */
 export const nextLineup = (v: ActLineup | null | undefined): ActLineup | null => (!v ? "band" : v === "band" ? "solo" : null);
 
-export const ACT_RELATIONSHIPS = ["openFor", "peer", "tourWith", "notFit"] as const;
+export const ACT_RELATIONSHIPS = ["openFor", "cobill", "tourWith", "notFit"] as const;
 export type ActRelationship = (typeof ACT_RELATIONSHIPS)[number];
-export const RELATIONSHIP_LABEL: Record<ActRelationship, string> = { openFor: "Want to open for them", peer: "Co-Bill", tourWith: "Tour with them", notFit: "Not a fit" };
+export const RELATIONSHIP_LABEL: Record<ActRelationship, string> = { openFor: "Want to open for them", cobill: "Co-Bill", tourWith: "Tour with them", notFit: "Not a fit" };
 export const RELATIONSHIP_HINT: Record<ActRelationship, string> = {
   openFor: "Bigger than us: pitch them for an opening slot.",
-  peer: "About our size: we open for them, they open for us.",
+  cobill: "About our size: we open for them, they open for us.",
   tourWith: "Go out on the road together: a run of dates on one bill.",
   notFit: "Hidden from the Acts list unless you ask for it.",
 };

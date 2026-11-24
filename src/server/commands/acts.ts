@@ -53,7 +53,7 @@ export const actsFind = defineCommand({
     "Find acts: the bands on venue calendars' bills (shared by every band), plus any added by hand. Each row: the act (name, description, genres, hometown, links), " +
     "rooms (every venue it's on a calendar at, with headliner/support), next (its next show), openedAt (venue ids on our list where it played support), " +
     "tour (2+ Colorado rooms within four weeks, from today), cities, and this band's take: shortlist (true = we watch them; the app says Watch), relationship (openFor = bigger than us, we want to open for them; " +
-    "peer = about our size, trade shows (the app says Co-Bill); tourWith = we want to tour with them; notFit), note. filter: shortlist (the acts we watch) | opened (played support at rooms we play) | tour | all (default). q matches the name. " +
+    "cobill = Co-Bill: about our size, we trade shows; tourWith = we want to tour with them; notFit), note. filter: shortlist (the acts we watch) | opened (played support at rooms we play) | tour | all (default). q matches the name. " +
     "Not-a-fit acts are left out unless q names them. count is every match. Acts aren't in search: find an act by name here, with q.",
   input: z.strictObject({
     q: z.string().optional(), filter: z.enum(FILTERS).default("all"), city: z.string().min(1).optional(),
@@ -81,13 +81,13 @@ export const actsFind = defineCommand({
 
 export const actsCreate = defineCommand({
   name: "acts.create", roles: [...ROLES], input: ActIn,
-  description: "Add an act by hand. Same name merges into the existing one. shortlist (Watch), relationship (openFor|peer|tourWith|notFit), note and contactIds are this band's (other bands never see them); everything else is shared with every band.",
+  description: "Add an act by hand. Same name merges into the existing one. shortlist (Watch), relationship (openFor|cobill|tourWith|notFit), note and contactIds are this band's (other bands never see them); everything else is shared with every band.",
   run: (ctx, input) => run(ctx, (w) => createNoted(w, "acts", input)),
 });
 
 export const actsUpdate = defineCommand({
   name: "acts.update", roles: [...ROLES], input: patchInput(ActIn),
-  description: "Edit an act: its shared facts (name, description, genres, hometown, lineup solo|band, links, imageUrl), or this band's shortlist (Watch), relationship (openFor|peer|tourWith|notFit), note and contactIds. " +
+  description: "Edit an act: its shared facts (name, description, genres, hometown, lineup solo|band, links, imageUrl), or this band's shortlist (Watch), relationship (openFor|cobill|tourWith|notFit), note and contactIds. " +
     "weKnow: true when the band knows this act (\"we know those guys\", \"friends of ours\"), false to unmark; it is not a shortlist or a relationship. " +
     "note replaces the text: read first to add. contactIds replaces the list; link people with contacts.attach (kind acts)." + SHARED_EDIT_NOTE,
   run: (ctx, { id, patch }) => run(ctx, (w) => updateNoted(ctx, w, "acts", id, patch as Record<string, unknown>)),
@@ -104,7 +104,7 @@ export const actsShortlist = defineCommand({
 export const actsNote = defineCommand({
   name: "acts.note", roles: [...ROLES],
   description:
-    "Say what an act is to this band, privately: relationship openFor (bigger than us: we want to open for them), peer (Co-Bill in the app: about our size, we open for them, they open for us), tourWith (we want to go on tour with them) " +
+    "Say what an act is to this band, privately: relationship openFor (bigger than us: we want to open for them), cobill (Co-Bill: about our size, we open for them, they open for us), tourWith (we want to go on tour with them) " +
     "or notFit (hidden from the Acts list), null clears it; and/or note, which replaces the note (read it with acts.find first to add to it; \"\" clears). Find the act's id with acts.find. " +
     "\"They're bigger than us\" or \"we'd love to open for them\" is relationship openFor alone: no note (unless they give one) and no watch (unless they ask).",
   input: z.strictObject({ id: z.string().min(1), relationship: z.enum(ACT_RELATIONSHIPS).nullable().optional(), note: z.string().nullable().optional() }),

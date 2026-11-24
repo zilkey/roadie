@@ -73,9 +73,9 @@ test("acts.shortlist on and off", async () => {
 
 test("acts.note sets relationship and note; null clears", async () => {
   const a = await cmd("acts.create", { name: "Denson" });
-  await cmd("acts.note", { id: a.id, relationship: "peer", note: "  Trade shows  " });
+  await cmd("acts.note", { id: a.id, relationship: "cobill", note: "  Trade shows  " });
   let n = (await take(a.id))!;
-  assert.equal(n.relationship, "peer");
+  assert.equal(n.relationship, "cobill");
   assert.equal(n.note, "Trade shows");
   await cmd("acts.note", { id: a.id, relationship: null });
   n = (await take(a.id))!;

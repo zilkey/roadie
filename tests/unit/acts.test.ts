@@ -162,7 +162,7 @@ test("actListed: known lists the acts we know", () => {
 test("actListed: our take filter, adding up with the others; Not a fit shows the hidden ones", () => {
   const f = { filter: "all" as const };
   assert.equal(actListed({ name: "X" }, undefined, { relationship: "tourWith" }, { ...f, take: "tourWith" }), true);
-  assert.equal(actListed({ name: "X" }, undefined, { relationship: "peer" }, { ...f, take: "tourWith" }), false);
+  assert.equal(actListed({ name: "X" }, undefined, { relationship: "cobill" }, { ...f, take: "tourWith" }), false);
   assert.equal(actListed({ name: "X" }, undefined, undefined, { ...f, take: "tourWith" }), false);
   assert.equal(actListed({ name: "X" }, undefined, undefined, { ...f, take: "none" }), true);
   assert.equal(actListed({ name: "X" }, undefined, { relationship: "openFor" }, { ...f, take: "none" }), false);
