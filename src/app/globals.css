@@ -365,10 +365,15 @@ fieldset.sec { margin: 0; }
 .book-table.cal th.name, .book-table.cal td.name { width: auto; white-space: normal; }
 .book-table.cal th.note, .book-table.cal td.note { width: 38%; min-width: 260px; }
 /* Acts list: balanced columns, not the .wn "name takes all the slack" layout. */
-.book-table.acts th.name, .book-table.acts td.name { width: 30%; white-space: normal; }
-.book-table.acts th.seen, .book-table.acts td.seen { width: 22%; }
-.book-table.acts th.next, .book-table.acts td.next { width: 16%; }
-.book-table th.acts-sl, .book-table td.acts-sl { width: 32%; min-width: 0; max-width: none; }
+.book-table.acts th.name, .book-table.acts td.name { width: 26%; white-space: normal; }
+.book-table.acts th.take, .book-table.acts td.take { width: 14%; }
+.book-table.acts th.seen, .book-table.acts td.seen { width: 20%; }
+.book-table.acts th.next, .book-table.acts td.next { width: 14%; }
+.book-table th.acts-sl, .book-table td.acts-sl { width: 26%; min-width: 0; max-width: none; }
+.book-table.acts.compact th.name, .book-table.acts.compact td.name { width: 36%; }
+/* Our take: a small dropdown in the row; muted until a take is set. */
+.take-sel { width: auto; max-width: 100%; min-height: 32px; padding-top: 2px; padding-bottom: 2px; font-size: 13px; }
+.take-sel[data-on="0"] { color: var(--muted); }
 .link-icons { display: inline-flex; flex-wrap: wrap; gap: 2px; }
 .link-icons a { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 8px; color: var(--muted); }
 .link-icons a:hover { color: var(--ink); background: var(--soft); }

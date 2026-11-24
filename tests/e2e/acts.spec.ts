@@ -231,7 +231,7 @@ test("the Acts tab shows the shortlist, all acts, a search, and hides an act tha
   await expect(page.getByTestId(`act-row-${lone}`)).toHaveCount(0);
   await page.getByTestId("acts-q").fill("lone");
   await expect(page.getByTestId(`act-row-${lone}`)).toBeVisible();
-  await expect(page.getByTestId(`act-row-${lone}`)).toContainText("Not a fit");
+  await expect(page.getByTestId(`act-take-${lone}`)).toHaveValue("notFit");
 
   // the X on a row dismisses an act as not a fit, with an Undo; again on a searched-for one clears it
   await page.getByTestId("acts-q").fill("");
@@ -253,6 +253,72 @@ test("the Acts tab shows the shortlist, all acts, a search, and hides an act tha
   await page.getByTestId(`act-dismiss-${lone}`).click(); // back to not a fit, as the later tests expect
   await expect(page.getByTestId(`act-dismiss-${lone}`)).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId(`act-star-${lone}`)).toHaveAttribute("aria-pressed", "false");
+});
+
+test("the Our take column sets a take without opening the act, the Our take filter lists by it, and Not a fit from it hides with an Undo", async ({ page }) => {
+  await signInAs(page, "rudy");
+  const id = (p: string) => p.split("/").pop()!;
+  const head = id(href.headliner), lone = id(href.lone);
+  await page.goto(A("/booking/acts?show=all"));
+  await loadAll(page);
+  await expect(page.getByTestId(`act-take-${head}`)).toHaveValue("");
+  await page.getByTestId(`act-take-${head}`).selectOption("tourWith");
+  await expect(page.getByTestId(`act-take-${head}`)).toHaveValue("tourWith");
+  await page.goto(href.headliner); // the act's page shows the same take
+  await expect(page.getByTestId("act-rel-tourWith")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("act-rel-hint")).toHaveText("Go out on the road together: a run of dates on one bill.");
+
+  await page.goto(A("/booking/acts?show=all"));
+  await page.getByTestId("acts-take-filter").selectOption("tourWith");
+  await expect(page).toHaveURL(/take=tourWith/);
+  await expect(page.getByTestId(/^act-row-/)).toHaveCount(1);
+  await expect(page.getByTestId(`act-row-${head}`)).toBeVisible();
+  await page.getByTestId("acts-filter").selectOption("shortlist"); // the filters add up: it isn't watched
+  await expect(page.getByTestId("acts-empty")).toHaveText("Nothing matches.");
+  await page.getByTestId("acts-filter").selectOption("all");
+  // Not a fit in the take filter lists the hidden ones
+  await page.getByTestId("acts-take-filter").selectOption("notFit");
+  await expect(page.getByTestId(`act-row-${lone}`)).toBeVisible();
+  await expect(page.getByTestId(`act-row-${head}`)).toHaveCount(0);
+  await page.getByTestId("acts-take-filter").selectOption("none");
+  await loadAll(page);
+  await expect(page.getByTestId(`act-row-${head}`)).toHaveCount(0);
+  await expect(page.getByTestId(`act-row-${lone}`)).toHaveCount(0);
+  await expect.poll(() => page.getByTestId(/^act-row-/).count()).toBeGreaterThan(0);
+
+  // Not a fit from the dropdown hides it with an Undo back to its take
+  await page.getByTestId("acts-take-filter").selectOption("");
+  await loadAll(page);
+  await page.getByTestId(`act-take-${head}`).selectOption("notFit");
+  await expect(page.getByTestId("acts-dismissed")).toContainText("The Example Band is hidden as not a fit.");
+  await expect(page.getByTestId(`act-row-${head}`)).toHaveCount(0);
+  await page.getByTestId("acts-undo").click();
+  await loadAll(page);
+  await expect(page.getByTestId(`act-take-${head}`)).toHaveValue("tourWith");
+  await page.getByTestId(`act-take-${head}`).selectOption(""); // cleared again, as the later tests expect
+  await expect(page.getByTestId(`act-take-${head}`)).toHaveValue("");
+});
+
+test("the booking search has an Acts section: the take dropdown works there, and All acts opens the Acts tab on the search", async ({ page }) => {
+  await signInAs(page, "rudy");
+  const lone = href.lone.split("/").pop()!, head = href.headliner.split("/").pop()!;
+  await page.goto(A("/booking"));
+  await page.getByTestId("booking-search").fill("example band");
+  const acts = page.getByTestId("bucket-acts");
+  await expect(acts.getByTestId(`act-row-${head}`)).toBeVisible();
+  await expect(page.getByTestId("bucket-count-acts")).toHaveText("1");
+  await expect(acts.locator("th", { hasText: "Sounds like" })).toHaveCount(0); // compact
+  await acts.getByTestId(`act-take-${head}`).selectOption("peer");
+  await expect(acts.getByTestId(`act-take-${head}`)).toHaveValue("peer");
+  await acts.getByTestId(`act-take-${head}`).selectOption("");
+  await expect(acts.getByTestId(`act-take-${head}`)).toHaveValue("");
+  // a Not a fit act still turns up when it's searched for
+  await page.getByTestId("booking-search").fill("lone");
+  await expect(page.getByTestId("bucket-acts").getByTestId(`act-take-${lone}`)).toHaveValue("notFit");
+  await page.getByTestId("bucket-all-acts").click();
+  await expect(page).toHaveURL(/\/booking\/acts\?show=all&find=lone$/);
+  await expect(page.getByTestId("acts-q")).toHaveValue("lone");
+  await expect(page.getByTestId(`act-row-${lone}`)).toBeVisible();
 });
 
 test("an act's name on the Booking Venue calendars tab links to its page", async ({ page }) => {

@@ -158,3 +158,16 @@ test("actListed: known lists the acts we know", () => {
   assert.equal(actListed({ name: "X" }, undefined, { shortlist: true }, { filter: "known" }), false);
   assert.equal(actListed({ name: "X" }, undefined, undefined, { filter: "known" }), false);
 });
+
+test("actListed: our take filter, adding up with the others; Not a fit shows the hidden ones", () => {
+  const f = { filter: "all" as const };
+  assert.equal(actListed({ name: "X" }, undefined, { relationship: "tourWith" }, { ...f, take: "tourWith" }), true);
+  assert.equal(actListed({ name: "X" }, undefined, { relationship: "peer" }, { ...f, take: "tourWith" }), false);
+  assert.equal(actListed({ name: "X" }, undefined, undefined, { ...f, take: "tourWith" }), false);
+  assert.equal(actListed({ name: "X" }, undefined, undefined, { ...f, take: "none" }), true);
+  assert.equal(actListed({ name: "X" }, undefined, { relationship: "openFor" }, { ...f, take: "none" }), false);
+  assert.equal(actListed({ name: "X" }, undefined, { relationship: "notFit" }, { ...f, take: "notFit" }), true);
+  assert.equal(actListed({ name: "X" }, undefined, { relationship: "notFit" }, { ...f, take: "" }), false);
+  assert.equal(actListed({ name: "X" }, undefined, { relationship: "tourWith" }, { filter: "shortlist", take: "tourWith" }), false);
+  assert.equal(actListed({ name: "X" }, undefined, { relationship: "tourWith", shortlist: true }, { filter: "shortlist", take: "tourWith" }), true);
+});

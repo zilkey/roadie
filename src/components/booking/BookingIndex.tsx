@@ -219,7 +219,7 @@ function Booking({ seg, campaign }: { seg: Tab; campaign?: CampaignKey }) {
         center={!campaign} actions={<>
         <label className={campaign ? "search-field narrow" : "search-field"}>
           <SearchIcon />
-          <input className="input" type="search" placeholder="Search places, festivals, contacts…" value={q} onChange={(e) => changeQ(e.target.value)} data-testid="booking-search" aria-label="Search booking" />
+          <input className="input" type="search" placeholder="Search places, festivals, acts, contacts…" value={q} onChange={(e) => changeQ(e.target.value)} data-testid="booking-search" aria-label="Search booking" />
           {q.trim() && <button type="button" className="search-clear" onClick={() => changeQ("")} data-testid="search-clear">Clear</button>}
         </label>
         {addActions}

@@ -16,7 +16,7 @@ export const BAND_NOTES = {
   promoters: { coll: "promoterNotes", key: "promoterId", fields: ["notes", "howToPitch"], lists: ["venueIds", "contactIds"], flags: [] },
   /** `weKnow`: someone in the band knows this person (networking, #82 S10: the venue page's Network tab). */
   contacts: { coll: "contactNotes", key: "contactId", fields: ["notes"], lists: [], flags: ["weKnow"] },
-  /** Acts (#77): `relationship` is openFor | peer | notFit (src/schema/acts.ts); `contactIds`, the act's people as this band's contacts; `weKnow`, we know the band. */
+  /** Acts (#77): `relationship` is openFor | peer | tourWith | notFit (src/schema/acts.ts); `contactIds`, the act's people as this band's contacts; `weKnow`, we know the band. */
   acts: { coll: "actNotes", key: "actId", fields: ["note", "relationship"], lists: ["contactIds"], flags: ["shortlist", "weKnow"] },
 } as const;
 export type NotedKind = keyof typeof BAND_NOTES;
@@ -29,7 +29,7 @@ export const EditionNote = entity({ artistId: id, editionId: id, notes: text, pa
 export const PromoterNote = entity({ artistId: id, promoterId: id, notes: text, howToPitch: text, venueIds: z.array(id).optional(), contactIds: z.array(id).optional() });
 export const ContactNote = entity({ artistId: id, contactId: id, notes: text, weKnow: z.boolean().optional() });
 export const ActNote = entity({
-  artistId: id, actId: id, shortlist: z.boolean().optional(), weKnow: z.boolean().optional(), relationship: z.enum(["openFor", "peer", "notFit"]).optional(), note: text, contactIds: z.array(id).optional(),
+  artistId: id, actId: id, shortlist: z.boolean().optional(), weKnow: z.boolean().optional(), relationship: z.enum(["openFor", "peer", "tourWith", "notFit"]).optional(), note: text, contactIds: z.array(id).optional(),
 });
 export const FestivalNoteInput = FestivalNote.omit(serverMask);
 export const EditionNoteInput = EditionNote.omit(serverMask);

@@ -136,14 +136,17 @@ export type ActFilter = "shortlist" | "known" | "opened" | "tour" | "all";
 export const ACT_FILTERS: [ActFilter, string][] = [["shortlist", "Watching"], ["known", "We know them"], ["opened", "Opened at our rooms"], ["tour", "On tour"], ["all", "All acts"]];
 
 export interface ActTake { shortlist?: boolean; weKnow?: boolean; relationship?: ActRelationship | string; note?: string }
+/** The Acts tab's "Our take" filter: any take (""), no take yet ("none"), or one take. */
+export type ActTakeFilter = "" | "none" | ActRelationship;
 /**
- * Whether an act is on the list for a filter, a city, genres (any of them, as on Venue calendars: "indie" covers "indie folk") and a
- * search; they add up. "Not a fit" acts are hidden unless searched for by name.
+ * Whether an act is on the list for a filter, our take, a city, genres (any of them, as on Venue calendars: "indie" covers "indie folk")
+ * and a search; they add up. "Not a fit" acts are hidden unless searched for by name or picked in the take filter.
  */
-export function actListed(a: { name: string; genres?: string[] }, s: ActStats | undefined, take: ActTake | undefined, f: { filter: ActFilter; city?: string; q?: string; genres?: readonly string[] }): boolean {
+export function actListed(a: { name: string; genres?: string[] }, s: ActStats | undefined, take: ActTake | undefined, f: { filter: ActFilter; take?: ActTakeFilter; city?: string; q?: string; genres?: readonly string[] }): boolean {
   const q = f.q?.trim().toLowerCase();
   if (q && !a.name.toLowerCase().includes(q)) return false;
-  if (!q && take?.relationship === "notFit") return false;
+  if (f.take === "none" ? !!take?.relationship : f.take ? take?.relationship !== f.take : false) return false;
+  if (!q && f.take !== "notFit" && take?.relationship === "notFit") return false;
   if (f.city && !s?.cities.includes(f.city)) return false;
   if (!genresMatch(f.genres ?? [], a.genres)) return false;
   if (f.filter === "shortlist") return !!take?.shortlist;
