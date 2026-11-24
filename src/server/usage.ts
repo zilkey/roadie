@@ -2,7 +2,7 @@
  * Daily limits per artist on the paid APIs Roadie pays for (tenancy plan phase 9, Q8), and the caps on new artists.
  *
  * - `usage/{artistId}_{yyyy-mm-dd}` (date in the artist's own zone): counters `roadieMessages`, `webLookups`, `transcriptions`,
- *   `maps`, `publicMaps`. `spend(ctx, meter)` adds to one, refusing with 429 `limit_reached` once the day's limit is used.
+ *   `imageReads`, `maps`, `publicMaps`. `spend(ctx, meter)` adds to one, refusing with 429 `limit_reached` once the day's limit is used.
  * - `usage/platform_{yyyy-mm-dd}` (UTC date): `newArtists` and `newArtistsBy.{uid}`, for `checkNewArtist`.
  * - `usage/signUp_{yyyy-mm-ddThh}` (UTC hour): `byUid.{uid}` and `byIp.{hash}`, for `checkSignUpTry`. `expiresAt` (a day
  *   on) lets the TTL policy on usage.expiresAt delete them.
@@ -23,8 +23,8 @@ import { artistFlags, isPlatformAdminUid } from "./platform";
 import { signUpOpen, INVITE_ONLY } from "./signUpFlag";
 import { dateInZone } from "@/lib/timezone";
 
-export type Meter = "roadieMessages" | "webLookups" | "transcriptions" | "maps" | "publicMaps";
-export const METERS: Meter[] = ["roadieMessages", "webLookups", "transcriptions", "maps", "publicMaps"];
+export type Meter = "roadieMessages" | "webLookups" | "transcriptions" | "imageReads" | "maps" | "publicMaps";
+export const METERS: Meter[] = ["roadieMessages", "webLookups", "transcriptions", "imageReads", "maps", "publicMaps"];
 
 export interface Limits extends Record<Meter, number> {
   /** New artists per day across Roadie (UTC day). */
@@ -38,7 +38,7 @@ export interface Limits extends Record<Meter, number> {
 }
 /** Q8's defaults. */
 export const DEFAULT_LIMITS: Limits = {
-  roadieMessages: 300, webLookups: 100, transcriptions: 30, maps: 1000, publicMaps: 200,
+  roadieMessages: 300, webLookups: 100, transcriptions: 30, imageReads: 50, maps: 1000, publicMaps: 200,
   newArtistsPerDay: 20, newArtistsPerPerson: 3,
   signUpTriesPerPerson: 10, signUpTriesPerIp: 30,
 };
@@ -47,7 +47,7 @@ export const USAGE = "usage";
 
 /** What a refusal calls the thing used up: "<artist> has used today's <thing>." */
 const THING: Record<Meter, string> = {
-  roadieMessages: "Roadie messages", webLookups: "web lookups", transcriptions: "voice transcriptions",
+  roadieMessages: "Roadie messages", webLookups: "web lookups", transcriptions: "voice transcriptions", imageReads: "image reads",
   maps: "map lookups", publicMaps: "map lookups for its fan sign-up page",
 };
 

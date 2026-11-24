@@ -147,6 +147,17 @@ export type TranscribeResponse = { text: string; answer?: VoiceAnswer };
 /** The longest clip the server takes (about 30 s of compressed speech). */
 export const MAX_AUDIO_BYTES = 1_000_000;
 
+/**
+ * POST /api/assistant/read-image (multipart: `image` file): the text in a pasted, dropped or picked image, for the person
+ * to edit and send. Nothing is kept. The browser shrinks a big photo before sending (src/components/roadie/useImageText.ts).
+ */
+export const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif", "image/heic", "image/heif"] as const;
+export type ReadImageResponse = { text: string };
+/** The biggest image the server takes. */
+export const MAX_IMAGE_BYTES = 8_000_000;
+/** At most this much text comes back: a chat message's own limit. */
+export const MAX_IMAGE_TEXT = 4000;
+
 /** POST /api/assistant/undo: the Undo on a read-back line. Only runs this thread made. */
 export const UndoRequest = z.strictObject({ threadId: id, runId: z.string().min(1).max(100) });
 export type UndoRequest = z.infer<typeof UndoRequest>;

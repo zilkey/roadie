@@ -2,6 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { A, openTab } from "./env";
 import { day } from "./dates";
 import { settledBox } from "./settle";
+import { pngWithText } from "../fixtures/png-text";
 
 async function signInAs(page: Page, key: string) {
   await page.goto("/signin");
@@ -187,4 +188,47 @@ test("Stop: while Roadie works, Send becomes Stop; tapping it ends the reply, ma
   await ask(page, "hi");
   await expect(page.getByTestId("roadie-msg-assistant").last()).toContainText("Roadie here");
   await expect(page.getByTestId("roadie-stopped")).toHaveCount(1);
+});
+
+// The emulators' fake reader returns a PNG's `ocr` text chunk as the image's words (src/server/assistant/readImage.ts).
+test("image: paste, drop or pick one, and its words land in the message box to edit and send", async ({ page }) => {
+  await signInAs(page, "nora");
+  await page.getByTestId("roadie-new").click();
+  const input = page.getByTestId("roadie-input");
+  const b64 = (text: string) => pngWithText(text).toString("base64");
+
+  // Paste a screenshot into an empty box.
+  await input.focus();
+  await input.evaluate((el, data) => {
+    const dt = new DataTransfer();
+    dt.items.add(new File([Uint8Array.from(atob(data), (c) => c.charCodeAt(0))], "shot.png", { type: "image/png" }));
+    el.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+  }, b64("Fri Dec 5\nThe Grand, 8pm"));
+  await expect(input).toHaveValue("Fri Dec 5\nThe Grand, 8pm");
+
+  // Pick one with the photo button: added after what's already there.
+  await input.fill("add this show:");
+  await page.getByTestId("roadie-photo-input").setInputFiles({ name: "flyer.png", mimeType: "image/png", buffer: pngWithText("Doors 7pm") });
+  await expect(input).toHaveValue("add this show:\n\nDoors 7pm");
+
+  // Drop one on the panel.
+  await input.fill("");
+  const dt = await page.evaluateHandle((data) => {
+    const d = new DataTransfer();
+    d.items.add(new File([Uint8Array.from(atob(data), (c) => c.charCodeAt(0))], "drop.png", { type: "image/png" }));
+    return d;
+  }, b64("Setlist: Ramble On"));
+  await page.getByTestId("roadie-chat").dispatchEvent("dragover", { dataTransfer: dt });
+  await page.getByTestId("roadie-chat").dispatchEvent("drop", { dataTransfer: dt });
+  await expect(input).toHaveValue("Setlist: Ramble On");
+
+  // No words: a note, and the box is left alone.
+  await page.getByTestId("roadie-photo-input").setInputFiles({ name: "blank.png", mimeType: "image/png", buffer: pngWithText("", "Comment") });
+  await expect(page.getByTestId("roadie-image-error")).toHaveText("I couldn't find any words in that image.");
+  await expect(input).toHaveValue("Setlist: Ramble On");
+
+  // Nothing is sent until the person sends it.
+  await expect(page.getByTestId("roadie-msg-user")).toHaveCount(0);
+  await input.press("Enter");
+  await expect(page.getByTestId("roadie-msg-user")).toHaveText("Setlist: Ramble On");
 });

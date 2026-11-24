@@ -13,6 +13,7 @@ const UPLOAD_ROUTES = [
   "/api/shows/warm/posters",
   "/api/posts/upload",
   "/api/assistant/transcribe",
+  "/api/assistant/read-image",
 ];
 
 export default async function warmRoutes() {

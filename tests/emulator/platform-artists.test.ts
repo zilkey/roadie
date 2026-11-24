@@ -131,7 +131,7 @@ test("platform.artists: newest first, creator, today's usage against the limits,
   assert.deepEqual(n.creator, { uid: newer.uid, name: "Pat Stranger", email: "pat@example.com" });
   assert.equal(n.timeZone, "America/New_York");
   assert.equal(n.usageDate, today);
-  assert.deepEqual(n.usage, { roadieMessages: 12, webLookups: 0, transcriptions: 0, maps: 3, publicMaps: 0 });
+  assert.deepEqual(n.usage, { roadieMessages: 12, webLookups: 0, transcriptions: 0, imageReads: 0, maps: 3, publicMaps: 0 });
   assert.deepEqual({ exempt: n.exempt, suspendedAt: n.suspendedAt }, { exempt: false, suspendedAt: null });
   assert.equal(list.artists[1].exempt, true);
   assert.equal(list.limits.roadieMessages, 300);

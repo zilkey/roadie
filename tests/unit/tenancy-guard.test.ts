@@ -148,7 +148,7 @@ test("server lists of users are scoped to the artist (or look one person up by e
 const ROUTES: Record<string, string> = {
   "commands/[name]": "authenticate (token + x-artist-id)",
   "assistant/chat": "authenticate", "assistant/confirm": "authenticate; the thread's artist must match", "assistant/stop": "authenticate; the thread's artist must match",
-  "assistant/undo": "authenticate; the thread's artist must match", "assistant/transcribe": "authenticate",
+  "assistant/undo": "authenticate; the thread's artist must match", "assistant/transcribe": "authenticate", "assistant/read-image": "authenticate",
   "files/[id]/audio": "authenticate", "stage-plots/[id]/pdf": "authenticate", "releases/[id]/files": "authenticate",
   "shows/[id]/posters": "authenticate", "songs/[id]/demo": "authenticate", "posts/upload": "authenticate",
   "rehearsals/[id]/recording": "authenticate or a shortcut token (resolveToken)",

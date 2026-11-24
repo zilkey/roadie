@@ -3,6 +3,7 @@ import { Fragment, useEffect, useRef, useState, useSyncExternalStore } from "rea
 import { useRoadie, type ChatMsg, type Pending } from "./useRoadie";
 import { useVamp } from "./vamp";
 import { useVoice, type VoicePhase } from "./useVoice";
+import { firstImage, useImageText } from "./useImageText";
 import { onRoadieAsk } from "./ask";
 import type { AssistantAction } from "@/schema/assistant";
 import { linkify } from "@/lib/linkify";
@@ -152,6 +153,10 @@ const MicIcon = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></svg>
 );
 
+const PhotoIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><rect x="3" y="5" width="18" height="14" rx="2" /><circle cx="9" cy="10" r="1.6" /><path d="M21 16l-5-5-8 8" /></svg>
+);
+
 function Chat({ messages, pending, busy, send, stop, on, notice, voice, autoFocus = false }: { messages: ChatMsg[]; pending: Pending | null; busy: boolean; send(t: string): unknown; stop(): void; on: Handlers; notice: string | null; voice: Voice; autoFocus?: boolean }) {
   const [text, setText] = useState("");
   const field = useRef<HTMLTextAreaElement>(null);
@@ -166,8 +171,23 @@ function Chat({ messages, pending, busy, send, stop, on, notice, voice, autoFocu
   // Grow with the text up to about five lines, then scroll.
   useEffect(() => { const el = field.current; if (!el) return; el.style.height = "auto"; el.style.height = `${Math.min(el.scrollHeight, 120)}px`; }, [text]);
   const submit = () => { if (!text.trim() || busy) return; send(text); setText(""); };
+  // An image pasted, dropped or picked: Roadie reads its words into the box, after anything already typed, to edit and send.
+  const image = useImageText();
+  const picker = useRef<HTMLInputElement>(null);
+  const [dropping, setDropping] = useState(false);
+  const readImage = async (file: File | undefined) => {
+    if (!file || image.reading) return;
+    const words = await image.read(file);
+    if (!words) return;
+    setText((t) => (t.trim() ? `${t.trimEnd()}\n\n${words}` : words));
+    field.current?.focus();
+  };
+  const hasFiles = (e: React.DragEvent) => Array.from(e.dataTransfer.types).includes("Files");
   return (
-    <>
+    <div className={`relative flex min-h-0 min-w-0 flex-1 flex-col ${dropping ? "outline-2 -outline-offset-4 outline-dashed outline-[var(--accent)]" : ""}`} data-testid="roadie-chat"
+      onDragOver={(e) => { if (!hasFiles(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setDropping(true); }}
+      onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropping(false); }}
+      onDrop={(e) => { if (!hasFiles(e)) return; e.preventDefault(); setDropping(false); void readImage(firstImage(e.dataTransfer.files)); }}>
       <div className="min-w-0 flex-1 overflow-y-auto" data-testid="roadie-messages">
         <div className="grid grid-cols-[minmax(0,1fr)] content-start gap-3 p-3">
           {!messages.length && !pending && <div className="s">Hey. I'm Roadie. Ask me about shows, tours or money.</div>}
@@ -183,14 +203,30 @@ function Chat({ messages, pending, busy, send, stop, on, notice, voice, autoFocu
           )}
           {notice && <div className="text-sm text-warn" data-testid="roadie-notice">{notice}</div>}
           {voice.error && <div className="text-sm text-warn" data-testid="roadie-voice-error">{voice.error}</div>}
+          {image.error && <div className="text-sm text-warn" data-testid="roadie-image-error">{image.error}</div>}
           <div ref={end} />
         </div>
       </div>
       <div className="p-3 pt-0">
         {voice.phase !== "idle" && <div className="s pb-1.5 pl-1" role="status" data-testid="roadie-voice-status">{VOICE_STATUS[voice.phase]}</div>}
+        {image.reading && <div className="s pb-1.5 pl-1" role="status" data-testid="roadie-image-status">Reading the image…</div>}
         <div className="flex items-end gap-2 rounded-2xl border border-[var(--roadie-control-border)] bg-[var(--roadie-bubble)] py-1.5 pl-3 pr-1.5">
           <textarea ref={field} rows={1} autoFocus={autoFocus} enterKeyHint="send" autoComplete="off" autoCorrect="on" className="roadie-input block max-h-[120px] min-w-0 flex-1 resize-none self-center bg-transparent text-[var(--ink)] outline-none placeholder:text-[var(--muted)]" data-testid="roadie-input" placeholder="Ask or tell me anything…" value={text}
-            onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); submit(); } }} />
+            onChange={(e) => setText(e.target.value)}
+            onPaste={(e) => {
+              // A screenshot or a copied image (no plain text with it: a copy from a document pastes its words as usual).
+              const file = firstImage(e.clipboardData.files);
+              if (!file || e.clipboardData.getData("text/plain")) return;
+              e.preventDefault();
+              void readImage(file);
+            }}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); submit(); } }} />
+          <input ref={picker} type="file" accept="image/*" hidden data-testid="roadie-photo-input"
+            onChange={(e) => { const f = firstImage(e.target.files); e.target.value = ""; void readImage(f); }} />
+          {voice.phase === "idle" && (
+            <button type="button" aria-label="Read text from an image" title="Read text from an image" data-testid="roadie-photo" disabled={busy || image.reading} onClick={() => picker.current?.click()}
+              className="grid size-8 shrink-0 place-items-center rounded-xl text-[var(--ink)] hover:bg-[var(--roadie-chip)] disabled:opacity-50"><PhotoIcon /></button>
+          )}
           {voice.available && (voice.phase === "idle" ? (
             <button type="button" aria-label="Talk to Roadie" title="Talk to Roadie" data-testid="roadie-mic" disabled={busy} onClick={() => void voice.start()}
               className="grid size-8 shrink-0 place-items-center rounded-xl text-[var(--ink)] hover:bg-[var(--roadie-chip)] disabled:opacity-50"><MicIcon /></button>
@@ -215,7 +251,7 @@ function Chat({ messages, pending, busy, send, stop, on, notice, voice, autoFocu
           )}
         </div>
       </div>
-    </>
+    </div>
   );
 }
 

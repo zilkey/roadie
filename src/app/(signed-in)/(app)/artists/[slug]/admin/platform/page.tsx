@@ -15,7 +15,7 @@ interface PlatformArtistRow {
 }
 interface ArtistList { limits: Record<string, number>; newArtistsToday: number; newArtistsPerDay: number; artists: PlatformArtistRow[] }
 
-const METER_LABEL: Record<string, string> = { roadieMessages: "Roadie", webLookups: "web", transcriptions: "voice", maps: "maps", publicMaps: "fan-page maps" };
+const METER_LABEL: Record<string, string> = { roadieMessages: "Roadie", webLookups: "web", transcriptions: "voice", imageReads: "images", maps: "maps", publicMaps: "fan-page maps" };
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" }) : "");
 
 const day = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "");

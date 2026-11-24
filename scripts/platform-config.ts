@@ -7,7 +7,7 @@
  *   ... platform-config.ts unexempt <artistId>
  *   ... platform-config.ts suspend <artistId>                # refuse its calls, hide its fan page, drop it from its members' claims
  *   ... platform-config.ts unsuspend <artistId>
- *   ... platform-config.ts limit <name> <n>                  # platform/limits: roadieMessages webLookups transcriptions maps
+ *   ... platform-config.ts limit <name> <n>                  # platform/limits: roadieMessages webLookups transcriptions imageReads maps
  *                                                            #   publicMaps newArtistsPerDay newArtistsPerPerson
  *                                                            #   signUpTriesPerPerson signUpTriesPerIp (per hour)
  *   ... platform-config.ts usage <artistId> [yyyy-mm-dd]     # that artist's counters (default: the last 7 days)
@@ -92,7 +92,7 @@ async function main() {
       if (!a1) throw new Error(USAGE_TEXT);
       const snap = await firestore().collection(USAGE).where("artistId", "==", a1).get();
       const rows = snap.docs.map((d) => d.data()).filter((d) => !a2 || d.date === a2).sort((x, y) => String(y.date).localeCompare(String(x.date))).slice(0, a2 ? 1 : 7);
-      for (const r of rows) console.log(`  ${r.date}: ${["roadieMessages", "webLookups", "transcriptions", "maps", "publicMaps"].map((k) => `${k}=${r[k] ?? 0}`).join(" ")}`);
+      for (const r of rows) console.log(`  ${r.date}: ${["roadieMessages", "webLookups", "transcriptions", "imageReads", "maps", "publicMaps"].map((k) => `${k}=${r[k] ?? 0}`).join(" ")}`);
       if (!rows.length) console.log("  no usage");
       return;
     }
