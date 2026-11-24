@@ -53,7 +53,7 @@ export const actsFind = defineCommand({
     "Find acts: the bands on venue calendars' bills (shared by every band), plus any added by hand. Each row: the act (name, description, genres, hometown, links), " +
     "rooms (every venue it's on a calendar at, with headliner/support), next (its next show), openedAt (venue ids on our list where it played support), " +
     "tour (2+ Colorado rooms within four weeks, from today), cities, and this band's take: shortlist (true = we watch them; the app says Watch), relationship (openFor = bigger than us, we want to open for them; " +
-    "peer = about our size, trade shows; tourWith = we want to tour with them; notFit), note. filter: shortlist (the acts we watch) | opened (played support at rooms we play) | tour | all (default). q matches the name. " +
+    "peer = about our size, trade shows (the app says Co-Bill); tourWith = we want to tour with them; notFit), note. filter: shortlist (the acts we watch) | opened (played support at rooms we play) | tour | all (default). q matches the name. " +
     "Not-a-fit acts are left out unless q names them. count is every match. Acts aren't in search: find an act by name here, with q.",
   input: z.strictObject({
     q: z.string().optional(), filter: z.enum(FILTERS).default("all"), city: z.string().min(1).optional(),
@@ -104,7 +104,7 @@ export const actsShortlist = defineCommand({
 export const actsNote = defineCommand({
   name: "acts.note", roles: [...ROLES],
   description:
-    "Say what an act is to this band, privately: relationship openFor (bigger than us: we want to open for them), peer (about our size: we open for them, they open for us), tourWith (we want to go on tour with them) " +
+    "Say what an act is to this band, privately: relationship openFor (bigger than us: we want to open for them), peer (Co-Bill in the app: about our size, we open for them, they open for us), tourWith (we want to go on tour with them) " +
     "or notFit (hidden from the Acts list), null clears it; and/or note, which replaces the note (read it with acts.find first to add to it; \"\" clears). Find the act's id with acts.find. " +
     "\"They're bigger than us\" or \"we'd love to open for them\" is relationship openFor alone: no note (unless they give one) and no watch (unless they ask).",
   input: z.strictObject({ id: z.string().min(1), relationship: z.enum(ACT_RELATIONSHIPS).nullable().optional(), note: z.string().nullable().optional() }),

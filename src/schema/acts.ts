@@ -42,7 +42,7 @@ export const nextLineup = (v: ActLineup | null | undefined): ActLineup | null =>
 
 export const ACT_RELATIONSHIPS = ["openFor", "peer", "tourWith", "notFit"] as const;
 export type ActRelationship = (typeof ACT_RELATIONSHIPS)[number];
-export const RELATIONSHIP_LABEL: Record<ActRelationship, string> = { openFor: "Want to open for them", peer: "Peer: trade shows", tourWith: "Tour with them", notFit: "Not a fit" };
+export const RELATIONSHIP_LABEL: Record<ActRelationship, string> = { openFor: "Want to open for them", peer: "Co-Bill", tourWith: "Tour with them", notFit: "Not a fit" };
 export const RELATIONSHIP_HINT: Record<ActRelationship, string> = {
   openFor: "Bigger than us: pitch them for an opening slot.",
   peer: "About our size: we open for them, they open for us.",
