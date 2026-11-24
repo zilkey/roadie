@@ -28,6 +28,8 @@ export const FileDoc = entity({
   approved: z.boolean().optional(),
   notes: z.array(fileNote).optional(),
   key: z.string().optional(),
+  /** Links only: what it is ("Reference track: listen to the drum feel"), shown under its name. */
+  description: z.string().optional(),
   // Drive files carry driveFileId (and the three Drive-only checks below); a Spotify/YouTube/web link has only a url, which is its identity.
   driveFileId: z.string().optional(),
   // Absent on files written before links existed: read as "drive" when driveFileId is set (see providerFor in lib/music).

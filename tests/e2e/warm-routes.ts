@@ -7,7 +7,7 @@ import { APP } from "./env";
  * spec runs. Add a route here when it takes a file.
  */
 const UPLOAD_ROUTES = [
-  "/api/songs/warm/demo",
+  "/api/songs/warm/upload",
   "/api/rehearsals/warm/recording",
   "/api/releases/warm/files",
   "/api/shows/warm/posters",

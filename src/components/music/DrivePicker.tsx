@@ -16,7 +16,7 @@ interface Mate { id: string; name: string; email: string }
  * Search Drive, tick files, set kind and key, and fix sharing gaps before attaching.
  * `syncWith` follows another field (the song title). The parent reads picks through onChange.
  */
-export function DrivePicker({ syncWith, exclude = [], defaultKind, kinds = KIND_ORDER, all = false, single = false, placeholder = "Search Drive by song title, or paste a Drive link…", onChange, onPickHits, testid = "picker" }: {
+export function DrivePicker({ syncWith, exclude = [], defaultKind, kinds = KIND_ORDER, all = false, single = false, noKey = false, placeholder = "Search Drive by song title, or paste a Drive link…", onChange, onPickHits, testid = "picker" }: {
   syncWith?: string; exclude?: string[]; defaultKind?: FileKind;
   /** The kinds the picked file can be (a release's or a track's kinds instead of a song's). */
   kinds?: readonly FileKind[];
@@ -24,6 +24,8 @@ export function DrivePicker({ syncWith, exclude = [], defaultKind, kinds = KIND_
   all?: boolean;
   /** One file at most (ticking another unticks the first), with no kind or key to set. */
   single?: boolean;
+  /** No Key box on a chart (adding to an existing song, whose key is on the song page): the key is still guessed from the name. */
+  noKey?: boolean;
   placeholder?: string;
   onChange(picks: Pick[]): void;
   /** The picked files as found (name, type, link), alongside onChange. */
@@ -127,7 +129,7 @@ export function DrivePicker({ syncWith, exclude = [], defaultKind, kinds = KIND_
                 <select className="select !w-auto" value={on.kind} onChange={(e) => setPick(h.driveFileId, { kind: e.target.value as FileKind })} aria-label="Kind" data-testid="hit-kind">
                   {kinds.map((k) => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
                 </select>
-                {kinds.includes("chart") && <input className="input !w-28" placeholder="Key" value={on.key} onChange={(e) => setPick(h.driveFileId, { key: e.target.value })} aria-label="Key" data-testid="hit-key" />}
+                {!noKey && kinds.includes("chart") && <input className="input !w-28" placeholder="Key" value={on.key} onChange={(e) => setPick(h.driveFileId, { key: e.target.value })} aria-label="Key" data-testid="hit-key" />}
               </div>
             )}
           </div>

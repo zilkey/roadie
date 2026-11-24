@@ -150,7 +150,7 @@ const ROUTES: Record<string, string> = {
   "assistant/chat": "authenticate", "assistant/confirm": "authenticate; the thread's artist must match", "assistant/stop": "authenticate; the thread's artist must match",
   "assistant/undo": "authenticate; the thread's artist must match", "assistant/transcribe": "authenticate", "assistant/read-image": "authenticate",
   "files/[id]/audio": "authenticate", "stage-plots/[id]/pdf": "authenticate", "releases/[id]/files": "authenticate",
-  "shows/[id]/posters": "authenticate", "songs/[id]/demo": "authenticate", "posts/upload": "authenticate",
+  "shows/[id]/posters": "authenticate", "songs/[id]/upload": "authenticate", "posts/upload": "authenticate",
   "rehearsals/[id]/recording": "authenticate or a shortcut token (resolveToken)",
   "shortcut/now": "shortcut token", "shortcut/rehearsals": "shortcut token", "shortcut/rehearsals/[id]/songs": "shortcut token",
   "availability/[id]/[musicianId]/[token]": "the ask's artistId, after the token hash check",

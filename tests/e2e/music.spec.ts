@@ -33,10 +33,16 @@ test("Writing tab: add a song in the Writing phase and upload audio to the Songw
   await page.getByTestId("save-song").click();
   await expect(page.getByTestId("song-page")).toBeVisible();
   await expect(page.getByTestId("song-status")).toHaveText("Writing");
-  await expect(page.getByTestId("song-upload-demo")).toContainText("Upload audio");
+  await page.getByTestId("song-upload-actions").click();
+  await expect(page.getByTestId("song-upload-menu").getByRole("menuitem")).toHaveText(["Demo", "Chart"]);
+  await page.keyboard.press("Escape");
   await page.getByTestId("song-upload-demo-input").setInputFiles({ name: "Porch Light work tape.m4a", mimeType: "audio/mp4", buffer: Buffer.from("not really audio") });
-  await expect(page.getByTestId("song-upload-demo-done")).toHaveText("Uploaded to Songwriting.");
+  await expect(page.getByTestId("song-upload-done")).toHaveText("Uploaded to Songwriting.");
   await expect(page.getByTestId("files-demo")).toContainText("Porch Light work tape.m4a");
+  // a Writing song's chart goes to the Songwriting folder too
+  await page.getByTestId("song-upload-chart-input").setInputFiles({ name: "Porch Light words.docx", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", buffer: Buffer.from("not really a doc") });
+  await expect(page.getByTestId("song-upload-done")).toHaveText("Uploaded to Songwriting.");
+  await expect(page.getByTestId("files-chart")).toContainText("Porch Light words.docx");
 
   // back lands on the Writing tab, and the song isn't counted as Unlinked
   await page.getByTestId("back").click();
@@ -90,6 +96,8 @@ test("add a song and attach files picked from a Drive search", async ({ page }) 
 
   // pick several at once; kind and key are guessed
   for (const n of ["demo.m4a", "chart E.docx", "chart G.pdf", "lyrics"]) await page.getByTestId(`hit-Last Train to Lyons ${n}`).getByTestId("hit-check").check();
+  // a new song's chart takes a key; the one guessed from the name is filled in
+  await expect(page.getByTestId("hit-Last Train to Lyons chart G.pdf").getByTestId("hit-key")).toHaveValue("G");
   await page.getByTestId("song-key").fill("E");
   await page.getByTestId("song-length").fill("4:17");
   await page.getByTestId("save-song").click();
@@ -107,8 +115,23 @@ test("add a song and attach files picked from a Drive search", async ({ page }) 
   await expect(page.getByTestId("files-demo")).toHaveCount(0);
   // Upload a demo puts it in the Demos folder (Settings > Google) under its own name and lists it under Demos
   await page.getByTestId("song-upload-demo-input").setInputFiles({ name: "Last Train voice memo.m4a", mimeType: "audio/mp4", buffer: Buffer.from("not really audio") });
-  await expect(page.getByTestId("song-upload-demo-done")).toHaveText("Uploaded to Demos.");
+  await expect(page.getByTestId("song-upload-done")).toHaveText("Uploaded to Demos.");
   await expect(page.getByTestId("files-demo")).toContainText("Last Train voice memo.m4a");
+  // Upload > Chart takes a PDF (or Word doc...) into the Charts folder and lists it under Charts
+  await page.getByTestId("song-upload-actions").click();
+  const chooser = page.waitForEvent("filechooser");
+  await page.getByTestId("song-upload-menu-chart").click();
+  await (await chooser).setFiles({ name: "Last Train lead sheet.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4 not really") });
+  await expect(page.getByTestId("song-upload-done")).toHaveText("Uploaded to Charts.");
+  await expect(page.getByTestId("files-chart")).toContainText("Last Train lead sheet.pdf");
+  // adding from Drive to an existing song asks for no key
+  await page.getByTestId("add-from-drive").click();
+  await page.getByTestId("picker").getByTestId("drive-q").fill("https://drive.google.com/file/d/fake-chart-2-b/view");
+  const hit = page.getByTestId("hit-Weathervane chart F.pdf");
+  await hit.getByTestId("hit-check").check();
+  await expect(hit.getByTestId("hit-kind")).toHaveValue("chart");
+  await expect(hit.getByTestId("hit-key")).toHaveCount(0);
+  await page.getByTestId("add-from-drive").click();
   // it shows up in the list with its key and length in their own columns
   await page.getByTestId("back").click();
   await page.getByTestId("songs-filter").fill("last train");
@@ -257,7 +280,7 @@ test("a member opens a song and sees its files, with no edit controls", async ({
   await expect(open).toHaveAttribute("href", /fake-drive-demo-1/);
   await expect(open).toHaveAttribute("target", "_blank");
   await expect(page.getByTestId("last-rehearsed")).toContainText("Oct 18");
-  for (const t of ["field-key-input", "add-from-drive", "song-upload-demo", "run-sharing-check", "fix-share", "fix-copy", "file-remove", "file-kind", "file-gap"]) await expect(page.getByTestId(t)).toHaveCount(0);
+  for (const t of ["field-key-input", "add-from-drive", "song-upload-actions", "run-sharing-check", "fix-share", "fix-copy", "file-remove", "file-kind", "file-gap"]) await expect(page.getByTestId(t)).toHaveCount(0);
 
   // setlists and rehearsals are readable, read-only
   await page.goto(A("/setlists"));
@@ -420,6 +443,7 @@ test("a song's Links: paste Spotify, YouTube and web links, play them on the pag
   await links.getByTestId("add-link").click();
   await links.getByTestId("link-url").fill("https://www.youtube.com/watch?v=linkwork01");
   await links.getByTestId("link-title").fill("Live at the Deep End");
+  await links.getByTestId("link-description-new").fill("Reference track: the drum feel");
   await links.getByTestId("link-save").click();
   await expect(links.getByTestId("add-link-form")).toBeHidden();
   // no scheme is fine; any other page is named by its site
@@ -428,6 +452,14 @@ test("a song's Links: paste Spotify, YouTube and web links, play them on the pag
   await links.getByTestId("link-save").click();
   await expect(links.getByTestId("add-link-form")).toBeHidden();
   await expect(links.getByTestId("file-label")).toHaveText(["Live at the Deep End", "SoundCloud", "Spotify"]);
+  // the description shows under the link, and is edited in place
+  const ref = links.locator(".sg-row").filter({ hasText: "Live at the Deep End" });
+  await expect(ref.getByTestId("link-description")).toHaveText("Reference track: the drum feel");
+  await ref.getByTestId("link-description").click();
+  await ref.getByTestId("link-description-input").fill("Reference track: the drum feel in the chorus");
+  await ref.getByTestId("link-description-input").blur();
+  await expect(ref.getByTestId("link-description")).toHaveText("Reference track: the drum feel in the chorus");
+  await expect(links.locator(".sg-row").filter({ hasText: "Spotify" }).getByTestId("link-description")).toHaveText("Add a description…");
   // links never land in Charts & recordings, and have no kind to pick
   await expect(page.getByTestId("no-files")).toBeVisible();
   await expect(links.getByTestId("file-kind")).toHaveCount(0);

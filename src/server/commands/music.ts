@@ -18,7 +18,7 @@ import { artistFor, defaultProjectIdFor, requireOpenProject } from "./projects";
 const kindEnum = z.enum(["chart", "demo", "rehearsal", "recording", "lyrics", "stems", "other"]);
 // Exactly one of driveFileId (looked up in Drive) or url (a Spotify/YouTube/web link, no lookup; provider is guessed from the url unless given).
 const AttachDrive = z.strictObject({ driveFileId: z.string().min(1), kind: kindEnum.optional(), key: z.string().optional(), title: z.string().optional() });
-const AttachLink = z.strictObject({ url: z.string().url(), provider: z.enum(["spotify", "youtube", "web"]).optional(), kind: kindEnum.optional(), title: z.string().optional() });
+const AttachLink = z.strictObject({ url: z.string().url(), provider: z.enum(["spotify", "youtube", "web"]).optional(), kind: kindEnum.optional(), title: z.string().optional(), description: z.string().optional() });
 const AttachFile = z.union([AttachDrive, AttachLink]);
 type Attach = z.infer<typeof AttachFile>;
 
@@ -34,7 +34,7 @@ async function buildFileDocs(ctx: Ctx, files: Attach[], parent: { songId?: strin
       const p = a.provider ?? providerFor(a.url);
       if (p === "drive") throw new AppError("invalid_input", "Attach Drive files by driveFileId, not url", 400);
       const title = a.title?.trim() || a.url;
-      out.push({ kind: a.kind ?? defaultKind ?? guessKind(title, undefined, p), title, ...parent, provider: p, url: a.url, checkedAt: new Date() });
+      out.push({ kind: a.kind ?? defaultKind ?? guessKind(title, undefined, p), title, ...parent, ...(a.description?.trim() ? { description: a.description.trim() } : {}), provider: p, url: a.url, checkedAt: new Date() });
       continue;
     }
     const f = await assertInBandFolder(ctx, a.driveFileId, drive);
@@ -118,8 +118,8 @@ export const filesAttach = defineCommand({
 export const filesUpdate = defineCommand({
   name: "files.update",
   roles: ["admin", "mcp"],
-  description: "Change a file's kind, key or title.",
-  input: z.strictObject({ id: z.string().min(1), patch: z.strictObject({ kind: kindEnum.optional(), key: z.string().nullable().optional(), title: z.string().min(1).optional() }) }),
+  description: "Change a file's kind, key, title or description (links: what it is, e.g. a reference track; null clears it).",
+  input: z.strictObject({ id: z.string().min(1), patch: z.strictObject({ kind: kindEnum.optional(), key: z.string().nullable().optional(), title: z.string().min(1).optional(), description: z.string().nullable().optional() }) }),
   run: (ctx, { id, patch }) => db.update(ctx, "files", id, patch),
 });
 export const filesRemove = defineCommand({

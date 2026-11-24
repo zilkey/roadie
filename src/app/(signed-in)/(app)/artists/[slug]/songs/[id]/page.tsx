@@ -16,13 +16,13 @@ import { todayStr } from "@/lib/booking";
 import { daysAgoLabel, driveIdFromUrl, fmtLen, linkName, refsLabel, songRefs, STATUS_LABEL, KIND_LABEL, KIND_ORDER, lastRehearsed, parseLen, playerFor, playsInline, PROVIDER_LABEL, providerFor, STATUS_ORDER, type FileKind, type SongStatus } from "@/lib/music";
 import { FileIcon, Missing, fmtDay, useMusic, type FileRow, type SongRow } from "@/components/music/common";
 import { DrivePicker, NoBandFolder, NoChartsFolder, type Pick } from "@/components/music/DrivePicker";
-import { Upload } from "@/components/music/Upload";
+import { UploadMenu, type UploadChoice } from "@/components/music/Upload";
 import { DocText, googleDocsOf } from "@/components/music/DocText";
 import { AudioPanel, PlayToggle } from "@/components/music/AudioPlayer";
 import { useCollection, useDoc } from "@/lib/firestore-hooks";
 import { trackHref } from "@/components/releases/common";
 import { ChecklistSidebar } from "@/components/shows/checklists/ChecklistSidebar";
-import type { Release, ReleaseTrack, Song } from "@/schema";
+import type { Artist, Release, ReleaseTrack, Song } from "@/schema";
 
 export default function SongPage() {
   const { id } = useParams<{ id: string }>();
@@ -99,6 +99,12 @@ function FileLine({ file, m, admin }: { file: FileRow; m: ReturnType<typeof useM
           {admin && <button className="btn danger sm" disabled={busy} onClick={() => confirm(`Remove ${file.title} from this song? ${isDrive ? "The Drive file stays put." : "The link itself is untouched."}`) && call("files.remove", { id: file.id })} data-testid="file-remove">Remove</button>}
         </span>
       </div>
+      {/* A link's description (a reference track and what to listen for): click to edit, blank clears it. */}
+      {!isDrive && (admin || file.description) && (
+        <InlineValue testid="link-description" label={`Description of ${file.title}`} kind="textarea" value={file.description ?? ""} canEdit={admin}
+          emptyLabel="Add a description…" placeholder="What is it? (a reference track, what to listen for…)" className="sf-note s"
+          onSave={async (v) => v.trim() === (file.description ?? "") || !!(await call("files.update", { id: file.id, patch: { description: v.trim() || null } }))} error={error} />
+      )}
       {open && inline && <Player file={file} />}
       {admin && checked && (names.length > 0 || outside || !hasFolder) && (
         <div className="flex flex-wrap items-center gap-2" data-testid="file-gap">
@@ -256,14 +262,10 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
           <h2 id="song-files-h" className="sg-lbl">Charts &amp; recordings</h2>
           {admin && (
             <div className="flex flex-wrap items-start gap-2">
-              {/* A Writing song's audio goes to the Songwriting folder; the route picks the folder from the song's status. */}
-              {song.status === "writing"
-                ? <Upload key="writing" url={`/api/songs/${encodeURIComponent(song.id)}/demo`} label="Upload audio" accept="audio/*" testid="song-upload-demo"
-                  disabled={!artistDoc?.songwritingFolderId} tooBig="Trim it, or put it in Drive yourself and add it from Drive."
-                  needsFolder={<>Choose the Songwriting folder on <Link href="/admin/google" className="underline">Settings &gt; Google</Link> to upload.</>} />
-                : <Upload key="demo" url={`/api/songs/${encodeURIComponent(song.id)}/demo`} label="Upload a demo" accept="audio/*" testid="song-upload-demo"
-                  disabled={!artistDoc?.demosFolderId} tooBig="Trim it, or put it in Drive yourself and add it from Drive."
-                  needsFolder={<>Choose the Demos folder on <Link href="/admin/google" className="underline">Settings &gt; Google</Link> to upload.</>} />}
+              {/* Upload ▾ Demo or Chart: a demo goes to the Demos folder, a chart to the Charts folder, and a Writing song's
+                  uploads both to the Songwriting folder. The route picks the folder from the kind and the song's status. */}
+              <UploadMenu key={song.status === "writing" ? "writing" : "song"} url={`/api/songs/${encodeURIComponent(song.id)}/upload`} testid="song-upload"
+                tooBig="Trim it, or put it in Drive yourself and add it from Drive." choices={uploadChoices(song.status === "writing", artistDoc)} />
               <button className="btn acc" onClick={() => setAdding(!adding)} data-testid="add-from-drive">{adding ? "Cancel" : "+ Add from Drive"}</button>
             </div>
           )}
@@ -282,7 +284,7 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
             {!artistDoc?.driveFolderId && files.some((f) => f.driveFileId) && <NoBandFolder />}
             {adding && (
               <div className="card">
-                <DrivePicker syncWith={song.title} exclude={files.flatMap((f) => f.driveFileId ?? [])} onChange={setPicks} />
+                <DrivePicker noKey syncWith={song.title} exclude={files.flatMap((f) => f.driveFileId ?? [])} onChange={setPicks} />
                 <button className="btn acc" disabled={busy || picks.length === 0} onClick={attach} data-testid="attach-files">Attach {picks.length || ""} file{picks.length === 1 ? "" : "s"}</button>
               </div>
             )}
@@ -316,6 +318,23 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
   );
 }
 
+/** A chart is any document: PDF, Word, Pages, OpenDocument, RTF, plain text, or a photo of one. */
+const CHART_ACCEPT = [".pdf", ".doc", ".docx", ".odt", ".rtf", ".txt", ".pages", "application/pdf", "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "image/*"].join(",");
+
+/** Upload ▾'s Demo and Chart, each off until its folder is chosen (a Writing song's both wait on the Songwriting folder). */
+function uploadChoices(writing: boolean, artist: Partial<Artist> | null | undefined): UploadChoice[] {
+  const choice = (key: "demo" | "chart", label: string, accept: string, folder: string, set: boolean): UploadChoice => ({
+    key, label, accept, fields: { kind: key }, disabled: !set, hint: `Choose the ${folder} folder on Settings > Google`,
+    needsFolder: <>Choose the {folder} folder on <Link href="/admin/google" className="underline">Settings &gt; Google</Link> to upload a {key}.</>,
+  });
+  const sw = !!artist?.songwritingFolderId;
+  return [
+    choice("demo", "Demo", "audio/*", writing ? "Songwriting" : "Demos", writing ? sw : !!artist?.demosFolderId),
+    choice("chart", "Chart", CHART_ACCEPT, writing ? "Songwriting" : "Charts", writing ? sw : !!artist?.chartsFolderId),
+  ];
+}
+
 /**
  * The song's links: Spotify, YouTube or any web page, pasted in by an admin. YouTube and Spotify play on the page; every
  * link opens in a new tab. A pasted Drive link is attached as the Drive file it is, so it lands in Charts & recordings.
@@ -325,8 +344,9 @@ function SongLinks({ songId, links, m, admin }: { songId: string; links: FileRow
   const [adding, setAdding] = useState(false);
   const [url, setUrl] = useState("");
   const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
   const [msg, setMsg] = useState("");
-  const close = () => { setAdding(false); setUrl(""); setTitle(""); };
+  const close = () => { setAdding(false); setUrl(""); setTitle(""); setDescription(""); };
   async function add(e: React.FormEvent) {
     e.preventDefault();
     let u = url.trim();
@@ -334,7 +354,7 @@ function SongLinks({ songId, links, m, admin }: { songId: string; links: FileRow
     const driveFileId = driveIdFromUrl(u);
     // A blank name reads as where the link goes: "Spotify", "YouTube", "SoundCloud", or the site's own host.
     const name = title.trim() || linkName(u);
-    const r = await call<{ ids: string[]; skipped: number }>("files.attach", { songId, files: [driveFileId ? { driveFileId, ...(title.trim() ? { title: title.trim() } : {}) } : { url: u, title: name }] });
+    const r = await call<{ ids: string[]; skipped: number }>("files.attach", { songId, files: [driveFileId ? { driveFileId, ...(title.trim() ? { title: title.trim() } : {}) } : { url: u, title: name, ...(description.trim() ? { description: description.trim() } : {}) }] });
     if (!r) return;
     setMsg(r.skipped ? "That link is already on this song." : driveFileId ? "That's a Drive file: it's under Charts & recordings." : "");
     close();
@@ -350,6 +370,8 @@ function SongLinks({ songId, links, m, admin }: { songId: string; links: FileRow
         <form className="card grid gap-2" onSubmit={add} data-testid="add-link-form">
           <input className="input" inputMode="url" autoFocus placeholder="Paste a Spotify, YouTube or web link" aria-label="Link" value={url} onChange={(e) => setUrl(e.target.value)} data-testid="link-url" />
           <input className="input" placeholder="Name (optional)" aria-label="Name" value={title} onChange={(e) => setTitle(e.target.value)} data-testid="link-title" />
+          <textarea className="input" rows={2} placeholder="Description (optional): a reference track, what to listen for…" aria-label="Description" value={description}
+            onChange={(e) => setDescription(e.target.value)} data-testid="link-description-new" />
           <div><button className="btn acc" type="submit" disabled={busy || !valid} data-testid="link-save">Add</button></div>
         </form>
       )}
