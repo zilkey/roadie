@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { generateKeyPairSync, sign } from "node:crypto";
-import { cronAllowed, GITHUB_ISSUER } from "@/server/cronAuth";
+import { cronAllowed, GITHUB_ISSUER, schedulerAllowed } from "@/server/cronAuth";
 
 const AUD = "https://app.example.test/api/cron/venue-calendars";
 const CALLER = { repository: "band/roadie", workflow: "venue-calendars.yml" };
@@ -37,4 +37,26 @@ test("wrong issuer, audience, repo, branch, workflow, or expired: refused", asyn
     { workflow_ref: "band/roadie/.github/workflows/other.yml@refs/heads/main" }, { exp: t - 1 }]) {
     assert.equal(await call(`Bearer ${jwt({ ...claims, ...bad })}`), false, JSON.stringify(bad));
   }
+});
+
+// Cloud Scheduler (scheduled posts): a Google-signed OIDC token for the job's service account.
+const SA = "post-scheduler@project.iam.gserviceaccount.com";
+const google = { iss: "https://accounts.google.com", aud: AUD, email: SA, email_verified: true, exp: t + 300, iat: t - 10 };
+const sched = (auth: string | undefined, sa: string | undefined = SA) =>
+  schedulerAllowed(new Request(AUD, { method: "POST", headers: auth ? { authorization: auth } : {} }), AUD, sa, { keys, now: NOW });
+
+test("scheduler: the job's service account gets in (either form of Google's issuer)", async () => {
+  assert.equal(await sched(`Bearer ${jwt(google)}`), true);
+  assert.equal(await sched(`Bearer ${jwt({ ...google, iss: "accounts.google.com" })}`), true);
+});
+test("scheduler: no token, no CRON_SCHEDULER_SA, another key, another account, unverified, wrong audience or issuer, or expired: refused", async () => {
+  assert.equal(await sched(undefined), false);
+  assert.equal(await sched(`Bearer ${jwt(google)}`, ""), false);
+  assert.equal(await sched(`Bearer ${jwt(google, other.privateKey)}`), false);
+  for (const bad of [{ email: "someone@project.iam.gserviceaccount.com" }, { email_verified: false }, { aud: "https://elsewhere.example/" }, { iss: GITHUB_ISSUER }, { exp: t - 1 }]) {
+    assert.equal(await sched(`Bearer ${jwt({ ...google, ...bad })}`), false, JSON.stringify(bad));
+  }
+  // A GitHub workflow token isn't a scheduler token, and the other way round.
+  assert.equal(await sched(`Bearer ${jwt()}`), false);
+  assert.equal(await call(`Bearer ${jwt(google)}`), false);
 });

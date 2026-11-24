@@ -1,8 +1,11 @@
 import { z } from "zod";
 import { entity, serverMask, id, via } from "./common";
 
-/** draft: being edited (its photos sit in Socials/Posts/DRAFT - <title>). publishing: going out now. posted. failed: Instagram refused it; editable again. */
-export const postStatus = z.enum(["draft", "publishing", "posted", "failed"]);
+/**
+ * draft: being edited (its photos sit in Socials/Posts/DRAFT - <title>). scheduled: a draft that goes out by itself at scheduledAt
+ * (still editable). publishing: going out now. posted. failed: Instagram refused it; editable again.
+ */
+export const postStatus = z.enum(["draft", "scheduled", "publishing", "posted", "failed"]);
 export type PostStatus = z.infer<typeof postStatus>;
 
 /** Where the photo is centred in the crop: CSS object-position fractions on the upright photo. */
@@ -58,6 +61,13 @@ export const Post = entity({
    * time): the next publish picks them up, unless the post has changed since (`key` is a hash of what they were made from).
    */
   pending: z.strictObject({ key: z.string(), creationId: z.string().optional(), children: z.array(z.string()).optional() }).optional(),
+  /** When a scheduled post goes out (ISO); kept once it has gone out or failed, so the post says what it was set for. */
+  scheduledAt: z.string().optional(),
+  /** Who scheduled it (uid) and how: the scheduled publish runs as them, and a failure is emailed to them. */
+  scheduledBy: z.string().optional(),
+  scheduledVia: via.optional(),
+  /** How many times the scheduler has tried it and been told to try again (a video still processing, a passing error). */
+  scheduleTries: z.number().int().optional(),
   /** Why it failed, in Instagram's words. */
   error: z.string().optional(),
   /** Posted, but renaming its folder failed: posts.tidy tries again. */

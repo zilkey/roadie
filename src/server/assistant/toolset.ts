@@ -57,7 +57,7 @@ export const GROUPS: ToolGroup[] = [
   { key: "contacts", title: "a contact's roles, linking contacts to venues and promoters, deleting a contact", match: prefixes("contacts.remove", "contacts.attach", "contacts.detach", "contacts.setRoles"), words: /\bcontacts?\b|\broles?\b|\battach|\bdetach|\blink\b|\bunlink|\bbooker\b|talent buyer/i, routes: /contact/i },
   { key: "showExtras", title: "show comments, posters, the show's Drive folder, opening or closing its Quick entry card, deleting a show", match: prefixes("shows.comment", "shows.editComment", "shows.removeComment", "shows.remove", "shows.folder", "shows.posters.", "shows.setQuickEntryOpen"), words: /quick ?entry|\bcomments?\b|poster|flyer|\bfolder\b|(?:delete|remove) (?:the |this |that )?(?:show|gig)/i },
   { key: "projects", title: "money projects (open, rename, close, reopen) and receipts", match: (n) => n.startsWith("projects.") || n === "receipts.search", words: /\bprojects?\b|receipt/i, routes: /project/i },
-  { key: "posts", title: "Instagram posts: ideas, drafts, carousels, photos, publishing", match: prefixes("posts."), words: /\bposts?\b|instagram|\bcarousel|caption|\bphotos?\b|publish/i, routes: /post/i },
+  { key: "posts", title: "Instagram posts: ideas, drafts, carousels, photos, publishing and scheduling", match: prefixes("posts."), words: /\bposts?\b|instagram|\bcarousel|caption|\bphotos?\b|publish|\breels?\b/i, routes: /post/i },
   { key: "stats", title: "Spotify and streaming stats", match: prefixes("stats."), words: /spotify|\bstats?\b|stream|listener|follower/i, routes: /stats/ },
 ];
 /** The group a tool is in; undefined for core (and for a tool that is in neither, which the unit test catches). */

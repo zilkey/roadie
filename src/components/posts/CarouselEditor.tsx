@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import Link, { useArtistRouter as useRouter } from "@/lib/artist";
+import Link, { useArtistRouter as useRouter, useZone } from "@/lib/artist";
+import { fmtInstant } from "@/lib/timezone";
 import { ErrorBox, useCommand } from "@/components/ui";
 import { SaveStatus } from "@/components/SaveStatus";
 import { toast } from "@/components/Toasts";
@@ -28,6 +29,7 @@ const clamp = (n: number) => Math.min(1, Math.max(0, n));
  */
 export function CarouselEditor({ post }: { post: Post & { id: string; rev?: number } }) {
   const router = useRouter();
+  const zone = useZone();
   const id = post.id;
   const readOnly = post.status === "posted" || post.status === "publishing";
   const drive = useCommand();
@@ -127,7 +129,7 @@ export function CarouselEditor({ post }: { post: Post & { id: string; rev?: numb
           </button>
         )}
         <span className="s" data-testid="editor-status">
-          {post.status === "draft" ? "Draft" : post.status === "failed" ? "Didn't post" : post.status === "publishing" ? "Posting…" : "Posted"}
+          {post.status === "draft" ? "Draft" : post.status === "scheduled" ? "Scheduled" : post.status === "failed" ? "Didn't post" : post.status === "publishing" ? "Posting…" : "Posted"}
         </span>
         <span className="ml-auto flex items-center gap-3">
           {!readOnly && <SaveStatus {...as.statusProps} />}
@@ -135,6 +137,12 @@ export function CarouselEditor({ post }: { post: Post & { id: string; rev?: numb
         </span>
       </div>
       {post.status === "failed" && post.error && <p className="err m-0" data-testid="editor-failed">Didn&apos;t post: {post.error}</p>}
+      {post.status === "scheduled" && post.scheduledAt && (
+        <p className="m-0" data-testid="editor-scheduled">
+          Posts by itself on <b>{fmtInstant(post.scheduledAt, zone, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</b>. Edits until then go out with it.{" "}
+          <button type="button" className="btn ghost sm" disabled={drive.busy} onClick={() => void drive.call("posts.unschedule", { id })} data-testid="editor-unschedule">Unschedule</button>
+        </p>
+      )}
       {post.status === "posted" && post.instagram?.permalink && (
         <p className="m-0"><a href={post.instagram.permalink} target="_blank" rel="noreferrer" className="underline" data-testid="editor-permalink">View on Instagram ›</a></p>
       )}
@@ -243,7 +251,7 @@ export function CarouselEditor({ post }: { post: Post & { id: string; rev?: numb
                 title="Post it to Instagram" onClick={() => setPosting(true)} data-testid="editor-post">Post…</button>
             </div>
           )}
-          <PostDialog open={posting} onClose={() => setPosting(false)} post={{ id, title: post.title, media }} before={() => as.flush()} />
+          <PostDialog open={posting} onClose={() => setPosting(false)} post={{ id, title: post.title, media, ...(post.status === "scheduled" && post.scheduledAt ? { scheduledAt: post.scheduledAt } : {}) }} before={() => as.flush()} />
         </div>
       </div>
     </div>

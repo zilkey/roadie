@@ -40,6 +40,7 @@
     { "collectionGroup": "availability", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "artistId", "order": "ASCENDING" }, { "fieldPath": "deletedAt", "order": "ASCENDING" }, { "fieldPath": "askedMusicianIds", "arrayConfig": "CONTAINS" }] }
   ],
   "fieldOverrides": [
+    { "collectionGroup": "posts", "fieldPath": "status", "indexes": [{ "order": "ASCENDING", "queryScope": "COLLECTION" }, { "order": "DESCENDING", "queryScope": "COLLECTION" }, { "arrayConfig": "CONTAINS", "queryScope": "COLLECTION" }, { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }] },
     { "collectionGroup": "tracks", "fieldPath": "deletedAt", "indexes": [{ "order": "ASCENDING", "queryScope": "COLLECTION" }, { "order": "DESCENDING", "queryScope": "COLLECTION" }, { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }, { "order": "DESCENDING", "queryScope": "COLLECTION_GROUP" }] },
     { "collectionGroup": "tracks", "fieldPath": "songId", "indexes": [{ "order": "ASCENDING", "queryScope": "COLLECTION" }, { "order": "DESCENDING", "queryScope": "COLLECTION" }, { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }, { "order": "DESCENDING", "queryScope": "COLLECTION_GROUP" }] },
     { "collectionGroup": "mutations", "fieldPath": "expiresAt", "ttl": true, "indexes": [] },

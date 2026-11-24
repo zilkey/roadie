@@ -402,3 +402,46 @@ test("A video alone posts as a Reel; a video too long for a carousel is flagged 
   await post.getByTestId("post-done-close").click();
   await expect(page.getByTestId(`post-${id}`)).toContainText("Reel · Posted");
 });
+
+test("Later: a Reel scheduled for tomorrow at 6pm shows its time in the editor and on Posts; Unschedule makes it a draft again", async ({ page, request }) => {
+  // Socials was set up and Instagram connected by the tests above.
+  await scenario(request, { revoked: false });
+  const v = await addVideo(request, "Tomorrow.mp4", 12_000);
+  await signInAs(page, "rudy");
+  await clearDrafts(page);
+  await page.goto(A("/posts/photos"));
+  await page.getByTestId(`photo-${v}`).click();
+  await page.getByTestId("photos-add").click();
+  const dlg = page.getByTestId("add-to-draft");
+  await dlg.getByTestId("add-to-draft-title").fill("Tomorrow");
+  await dlg.getByTestId("add-to-draft-go").click();
+  await expect(page.getByTestId("editor-title")).toHaveText("Tomorrow");
+  const id = page.url().split("/").pop()!;
+
+  await page.getByTestId("editor-post").click();
+  const post = page.getByTestId("post-dialog");
+  await expect(post.getByTestId("post-account")).toContainText("goes to @noraquillband now");
+  await post.getByTestId("post-when-later").click();
+  await expect(post.getByTestId("post-account")).toContainText("at the time below");
+  await expect(post.getByTestId("post-schedule-time")).toHaveValue("18:00");
+  await post.getByTestId("post-schedule").click();
+  await expect(post.getByTestId("post-scheduled-at")).toContainText("6:00 PM");
+  const before = ((await (await request.get(`${META}/__media`)).json()) as { media: unknown[] }).media.length;
+
+  await post.getByTestId("post-scheduled-close").click();
+  await expect(page.getByTestId(`post-${id}`).getByTestId("post-scheduled-for")).toContainText("Scheduled for");
+  await expect(page.getByTestId(`post-${id}`).getByTestId("post-scheduled-for")).toContainText("6:00 PM");
+  await page.getByTestId(`post-${id}`).getByTestId("post-title").click();
+  await expect(page.getByTestId("editor-status")).toHaveText("Scheduled");
+  await expect(page.getByTestId("editor-scheduled")).toContainText("6:00 PM");
+  // It opens on Later, at its time.
+  await page.getByTestId("editor-post").click();
+  await expect(post.getByTestId("post-schedule")).toHaveText("Change time");
+  await post.getByTestId("post-cancel").click();
+  await page.getByTestId("editor-unschedule").click();
+  await expect(page.getByTestId("editor-status")).toHaveText("Draft");
+  await expect(page.getByTestId("editor-scheduled")).toHaveCount(0);
+  const after = ((await (await request.get(`${META}/__media`)).json()) as { media: unknown[] }).media.length;
+  expect(after, "nothing was posted").toBe(before);
+  await clearDrafts(page);
+});

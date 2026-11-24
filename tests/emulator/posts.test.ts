@@ -17,7 +17,11 @@ import { graph, signMetaState, verifyMetaState } from "@/server/meta/graph";
 import { GET as mediaGET } from "@/app/api/posts/media/[postId]/[index]/route";
 import { POST as uploadPOST } from "@/app/api/posts/upload/route";
 import { GET as thumbGET } from "@/app/api/posts/thumb/[artistId]/[fileId]/route";
-import { photosLimits, publishTiming, STILL_PROCESSING } from "@/server/commands/posts";
+import { photosLimits, publishTiming, STILL_PROCESSING, SCHEDULE_PAST, SCHEDULE_TOO_FAR } from "@/server/commands/posts";
+import { publishDue, MAX_TRIES } from "@/server/scheduledPosts";
+import { POST as cronPostsPOST } from "@/app/api/cron/posts/route";
+import { gmailClient } from "@/server/integrations";
+import { dateTimeInZone } from "@/lib/timezone";
 import { findOrMakeFolder } from "@/server/driveFolders";
 import { thumbUrl } from "@/server/signedUrl";
 import { dayLabels, groupByDay } from "@/lib/photoDays";
@@ -42,6 +46,7 @@ before(async () => {
   const s = await startAll({ dataDir: dir, ephemeral: true });
   stop = s.close;
   process.env.DRIVE_BASE_URL = s.running["fake-drive"].url;
+  process.env.GMAIL_BASE_URL = s.running["fake-gmail"].url;
   META = s.running["fake-meta"].url;
   Object.assign(process.env, {
     META_APP_ID: "fake-meta-app", META_CONFIG_ID: "fake-meta-config", META_APP_SECRET: "fake-meta-secret", META_TOKEN_KEY: Buffer.alloc(32, 7).toString("base64"),
@@ -80,7 +85,7 @@ const connect = async () => { const s = await signIn(); return cmd("meta.finishC
 
 beforeEach(async () => {
   await resetEmulators();
-  for (const f of ["fake-drive", "fake-meta"]) await fetch(`${f === "fake-drive" ? process.env.DRIVE_BASE_URL : META}/__reset`, { method: "POST" });
+  for (const u of [process.env.DRIVE_BASE_URL, META, process.env.GMAIL_BASE_URL]) await fetch(`${u}/__reset`, { method: "POST" });
   rudy = await makeUser("rudy@example.com", "admin", { name: "Rudy" });
   hugo = await makeUser("hugo@example.com", "member", { name: "Hugo" });
   ctx = { uid: rudy.uid, role: "admin", via: "app", runId: newRunId(), artistId: TEST_ARTIST };
@@ -1176,4 +1181,159 @@ test("publish: a post changed since its containers were made starts over", async
     assert.deepEqual(g.calls(), ["createReel", "publish", "permalink"], "a new Reel container, with the new caption");
   } finally { g.restore(); }
   assert.equal((await publishedAll())[0].caption, "A new caption");
+});
+
+// ---------- scheduled posts ----------
+
+/** "YYYY-MM-DD HH:MM" in the band's zone (Denver), `min` minutes from now. */
+const inMinutes = (min: number) => dateTimeInZone("America/Denver", new Date(Date.now() + min * 60_000));
+const later = (min = 30) => new Date(Date.now() + min * 60_000);
+
+test("schedule: refused in the past or under a minute away, over a year away, badly written, unconnected, or with a video Instagram won't take", async () => {
+  await chooseSocials();
+  const id = await oneDraft();
+  await code(cmd("posts.schedule", { id, at: inMinutes(10) }), "meta_not_connected");
+  await connect();
+  await rejects(cmd("posts.schedule", { id, at: inMinutes(-5) }), "invalid_input", new RegExp(SCHEDULE_PAST));
+  await rejects(cmd("posts.schedule", { id, at: inMinutes(0) }), "invalid_input", new RegExp(SCHEDULE_PAST));
+  await rejects(cmd("posts.schedule", { id, at: inMinutes(366 * 24 * 60) }), "invalid_input", new RegExp(SCHEDULE_TOO_FAR));
+  assert.throws(() => registry["posts.schedule"].input.parse({ id, at: "tomorrow at 7" }));
+  const long = await video("Long.mp4", 20 * 60_000);
+  const v = await oneDraft([long], "Long one");
+  await rejects(cmd("posts.schedule", { id: v, at: inMinutes(10) }), "invalid_input", /Instagram won't take Long/);
+  assert.equal((await db.get(SYS, "posts", id))!.status, "draft", "nothing changed");
+});
+
+test("schedule: the band's wall time becomes the instant; it lists first with its time, stays editable, and unschedule makes it a draft again", async () => {
+  await connect();
+  await chooseSocials();
+  const other = await oneDraft(["fake-social-loose-2"], "Other");
+  const id = await oneDraft(["fake-social-loose-1"], "Thanks, Roots");
+  await cmd("posts.updateDraft", { id: other, patch: { caption: "newer edit" } });
+  const r = await cmd("posts.schedule", { id, at: "2027-01-15 19:30" });
+  assert.deepEqual(r, { status: "scheduled", scheduledAt: "2027-01-16T02:30:00.000Z" }, "7:30pm in Denver is 02:30 UTC");
+  const p = (await db.get(SYS, "posts", id))!;
+  assert.equal(p.scheduledBy, rudy.uid);
+  assert.equal(p.scheduledVia, "app");
+  const list = await cmd("posts.list", {});
+  assert.deepEqual(list.drafts.map((d: { id: string }) => d.id), [id, other], "scheduled first");
+  assert.equal(list.drafts[0].scheduledAt, "2027-01-16T02:30:00.000Z");
+  assert.equal(list.drafts[0].status, "scheduled");
+  await cmd("posts.updateDraft", { id, patch: { caption: "Still editable" } });
+  // A second schedule changes the time.
+  await cmd("posts.schedule", { id, at: "2027-01-15 20:00" });
+  assert.equal((await db.get(SYS, "posts", id))!.scheduledAt, "2027-01-16T03:00:00.000Z");
+  assert.deepEqual(await cmd("posts.unschedule", { id }), { status: "draft" });
+  const d = (await db.get(SYS, "posts", id))!;
+  assert.equal(d.status, "draft");
+  assert.equal(d.scheduledAt, undefined);
+  assert.equal(d.caption, "Still editable");
+  await code(cmd("posts.unschedule", { id }), "invalid_input");
+  assert.equal(registry["posts.unschedule"].roles.includes("member" as never), false);
+});
+
+test("scheduled posts: nothing goes out before its time; once due it posts as the person who scheduled it, and isn't posted twice", async () => {
+  await connect();
+  await chooseSocials();
+  const id = await oneDraft();
+  await cmd("posts.updateDraft", { id, patch: { caption: "Scheduled hello" } });
+  await cmd("posts.schedule", { id, at: inMinutes(10) });
+  assert.deepEqual(await publishDue(new Date()), { due: 0, results: [] });
+  assert.equal((await publishedAll()).length, 0);
+  const r = await fast(() => publishDue(later()));
+  assert.deepEqual(r, { due: 1, results: [{ artistId: TEST_ARTIST, id, outcome: "posted" }] });
+  const p = (await db.get(SYS, "posts", id))!;
+  assert.equal(p.status, "posted");
+  assert.equal(p.updatedBy, rudy.uid, "posted as Rudy");
+  assert.equal((await publishedAll())[0].caption, "Scheduled hello");
+  assert.equal(await folderOf(id), `${dateInZone("America/Denver")} - Thanks, Roots`);
+  assert.deepEqual(await publishDue(later()), { due: 0, results: [] }, "posted: not due again");
+  assert.equal((await publishedAll()).length, 1);
+});
+
+test("scheduled posts: a video still processing goes back on the schedule and the next run picks it up; it gives up after MAX_TRIES", async () => {
+  await connect();
+  await chooseSocials();
+  const id = await oneDraft([await video()], "Encore");
+  await cmd("posts.schedule", { id, at: inMinutes(5) });
+  await scenario({ videoPolls: 1000 });
+  const was = { ...publishTiming };
+  Object.assign(publishTiming, { pollMs: 5, waitMs: 60 });
+  try {
+    const r = await publishDue(later());
+    assert.equal(r.results[0].outcome, "retry");
+    const p = (await db.get(SYS, "posts", id))!;
+    assert.equal(p.status, "scheduled");
+    assert.equal(p.scheduleTries, 1);
+    assert.ok(p.pending?.creationId, "the Reel container is kept");
+  } finally { Object.assign(publishTiming, was); }
+  await scenario({ finishVideos: true });
+  const g = recordAll();
+  try {
+    assert.equal((await fast(() => publishDue(later()))).results[0].outcome, "posted");
+    assert.deepEqual(g.calls(), ["publish", "permalink"], "picked up where it left off");
+  } finally { g.restore(); }
+  // One that never finishes: failed on the last try, and emailed.
+  const stuck = await oneDraft([await video("Stuck.mp4")], "Stuck");
+  await cmd("posts.schedule", { id: stuck, at: inMinutes(5) });
+  await db.update(ctx, "posts", stuck, { scheduleTries: MAX_TRIES - 1 });
+  await scenario({ videoPolls: 1000 });
+  Object.assign(publishTiming, { pollMs: 5, waitMs: 60 });
+  try {
+    const r = await publishDue(later());
+    assert.equal(r.results[0].outcome, "failed");
+    assert.equal(r.results[0].emailed, true);
+  } finally { Object.assign(publishTiming, was); }
+  assert.equal((await db.get(SYS, "posts", stuck))!.status, "failed");
+});
+
+test("scheduled posts: Instagram refusing it fails it at once and emails whoever scheduled it, with the reason and a link", async () => {
+  await connect();
+  await chooseSocials();
+  const id = await oneDraft(["fake-social-loose-1", await video("Encore.mp4")], "Encore");
+  await cmd("posts.schedule", { id, at: inMinutes(5) });
+  await scenario({ failItem: 2 });
+  const r = await fast(() => publishDue(later()));
+  assert.equal(r.results[0].outcome, "failed");
+  assert.equal(r.results[0].emailed, true);
+  const p = (await db.get(SYS, "posts", id))!;
+  assert.equal(p.status, "failed");
+  assert.match(p.error, /Encore: Instagram couldn't take the video/);
+  const [mail] = await gmailClient().listMessages({ account: "rudy@example.com" });
+  assert.equal(mail.subject, "Didn't post: Encore");
+  assert.deepEqual(mail.to, ["rudy@example.com"]);
+  assert.match(mail.body, /Encore: Instagram couldn't take the video/);
+  assert.match(mail.body, new RegExp(`/artists/band/posts/${id}`));
+  assert.deepEqual(await publishDue(later()), { due: 0, results: [] }, "failed: not tried again");
+});
+
+test("scheduled posts: signed out of Instagram, or the scheduler no longer an admin, fails it without posting", async () => {
+  await connect();
+  await chooseSocials();
+  const id = await oneDraft();
+  await cmd("posts.schedule", { id, at: inMinutes(5) });
+  await cmd("meta.disconnect", {});
+  const r = await fast(() => publishDue(later()));
+  assert.equal(r.results[0].outcome, "failed");
+  assert.match((await db.get(SYS, "posts", id))!.error, /Instagram isn't connected/);
+  await connect();
+  const two = await oneDraft(["fake-social-loose-2"], "Two");
+  await cmd("posts.schedule", { id: two, at: inMinutes(5) });
+  await db.update(SYS, "users", rudy.uid, { artists: [{ artistId: TEST_ARTIST, role: "member" }] });
+  const r2 = await publishDue(later());
+  assert.equal(r2.results[0].outcome, "failed");
+  assert.match((await db.get(SYS, "posts", two))!.error, /isn't an admin/);
+  assert.equal((await publishedAll()).length, 0);
+});
+
+test("the cron route lets in only Cloud Scheduler's token", async () => {
+  const res = await cronPostsPOST(new Request("http://app/api/cron/posts", { method: "POST" }));
+  assert.equal(res.status, 401);
+});
+
+test("Roadie asks before scheduling a post, by tap, and names when", () => {
+  assert.equal(needsConfirm("posts.schedule", {}), true);
+  assert.equal(voiceConfirmable("posts.schedule", {}, false), false);
+  assert.equal(needsConfirm("posts.unschedule", {}), false);
+  assert.equal(summarize("posts.schedule", { id: "x", at: "2027-01-15 19:30" }, undefined, { title: "Encore", count: 1, videos: 1 }), "Schedule Encore (Reel) to post to Instagram by itself on 2027-01-15 at 19:30");
 });

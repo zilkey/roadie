@@ -24,6 +24,7 @@ import { findOrMakeFolder } from "../driveFolders";
 import { POSTS_FOLDER_NAME, inboxFolders, isEmpty, listAll, moveBack, moveInto, socialsOf, uniqueName } from "../postFolder";
 import { thumbUrl } from "../signedUrl";
 import { dateInZone, dateTimeInZone } from "@/lib/timezone";
+import { wallToInstant } from "@/lib/pickShow";
 import { zoneOf } from "../zone";
 import { HASHTAG_MAX, MEDIA_ONLY, hashtagCount, isVideo, mediaType, videoProblem } from "@/lib/photos";
 import { HEIC_PREVIEW, fromPreview, noPreview } from "../postPhoto";
@@ -149,14 +150,14 @@ export const postsPhotos = defineCommand({
  */
 export interface PostRow {
   id: string; title?: string; status: z.infer<typeof postStatus>; postedAt?: string; count: number; videos: number; thumb?: string; driveFolderId?: string;
-  permalink?: string | null; error?: string; driveTidy?: { error: string };
+  permalink?: string | null; error?: string; driveTidy?: { error: string }; scheduledAt?: string;
 }
 
 const millis = (t: unknown) => (t as { toMillis?(): number } | undefined)?.toMillis?.() ?? (typeof t === "string" ? Date.parse(t) : 0);
 
 export const postsList = defineCommand({
   name: "posts.list", roles: ["admin", "mcp"],
-  description: "The band's posts made in Roadie: `drafts` (drafts, failed posts and any being posted right now, most recently changed first) and `posts` (posted to Instagram, newest first), each with its title, status, how many photos and videos it has (count) and how many are videos (one video alone is a Reel), Instagram link and any error.",
+  description: "The band's posts made in Roadie: `drafts` (scheduled posts first, soonest first, with scheduledAt; then drafts, failed posts and any being posted right now, most recently changed first) and `posts` (posted to Instagram, newest first), each with its title, status, how many photos and videos it has (count) and how many are videos (one video alone is a Reel), Instagram link and any error.",
   input: z.strictObject({}),
   async run(ctx) {
     const artistId = artistOf(ctx);
@@ -167,6 +168,7 @@ export const postsList = defineCommand({
         id: d.id as string, status: d.status as PostRow["status"], count: media.length, videos: media.filter((m) => isVideo(m.mimeType)).length,
         ...(d.title ? { title: d.title as string } : {}),
         ...(d.postedAt ? { postedAt: d.postedAt as string } : {}),
+        ...(d.status === "scheduled" && d.scheduledAt ? { scheduledAt: d.scheduledAt as string } : {}),
         ...(d.driveFolderId ? { driveFolderId: d.driveFolderId as string } : {}),
         ...(first ? { thumb: thumbUrl(artistId, first.driveFileId, first.modifiedTime, 400) } : {}),
         ...(d.instagram ? { permalink: (d.instagram as { permalink: string | null }).permalink } : {}),
@@ -174,7 +176,9 @@ export const postsList = defineCommand({
         ...(d.driveTidy ? { driveTidy: d.driveTidy as { error: string } } : {}),
       };
     };
-    const drafts = docs.filter((d) => d.status !== "posted").sort((a, b) => millis(b.updatedAt) - millis(a.updatedAt));
+    const drafts = docs.filter((d) => d.status !== "posted").sort((a, b) =>
+      a.status === "scheduled" && b.status === "scheduled" ? millis(a.scheduledAt) - millis(b.scheduledAt)
+        : a.status === "scheduled" ? -1 : b.status === "scheduled" ? 1 : millis(b.updatedAt) - millis(a.updatedAt));
     const posted = docs.filter((d) => d.status === "posted")
       .sort((a, b) => (millis(b.postedAt) || millis(b.createdAt)) - (millis(a.postedAt) || millis(a.createdAt)));
     return { drafts: drafts.map(rowOf), posts: posted.map(rowOf) };
@@ -688,6 +692,57 @@ export const postsPublish = defineCommand({
   },
 });
 
+// ---------- scheduling: posted by itself at a set time ----------
+
+/** How far ahead a post may be scheduled. */
+export const SCHEDULE_MAX_DAYS = 365;
+export const SCHEDULE_PAST = "Pick a time at least a minute from now";
+export const SCHEDULE_TOO_FAR = `Pick a time within ${SCHEDULE_MAX_DAYS} days`;
+const WALL = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})$/;
+
+export const postsSchedule = defineCommand({
+  name: "posts.schedule", roles: ["admin", "mcp"],
+  description: "Schedule a draft (or a post that failed, or one already scheduled, to change its time) to post to the band's Instagram by itself at `at`: \"YYYY-MM-DD HH:MM\", 24-hour, in the band's time zone, at least a minute from now and within a year. " +
+    "It goes out within about a minute of that time, exactly as posts.publish would post it then, and it can still be edited until then (the edits go out). " +
+    "Checked now: Instagram is connected and every video is within Instagram's limits. If it can't post when the time comes, the post is marked failed with the reason and the person who scheduled it gets an email. posts.unschedule turns it back into a draft.",
+  input: z.strictObject({ id: z.string().min(1), at: z.string().regex(WALL, "at is YYYY-MM-DD HH:MM") }),
+  async run(ctx, { id, at }) {
+    const post = await postOf(ctx, id);
+    editable(post);
+    const now = (ctx.now ?? new Date()).getTime();
+    const [, date, time] = WALL.exec(at)!;
+    const when = wallToInstant(date, time, await zoneOf(ctx));
+    if (when < now + 60_000) throw new AppError("invalid_input", SCHEDULE_PAST, 400);
+    if (when > now + SCHEDULE_MAX_DAYS * 86_400_000) throw new AppError("invalid_input", SCHEDULE_TOO_FAR, 400);
+    const carousel = post.media.length > 1;
+    for (const m of post.media) {
+      const why = isVideo(m.mimeType) ? videoProblem(m, carousel) : null;
+      if (why) throw new AppError("invalid_input", `Instagram won't take ${photoLabel(m.name)}: ${why}`, 400);
+    }
+    await freshToken(ctx.artistId); // not connected, or needs a new sign-in: say so now, not when it's due
+    const scheduledAt = new Date(when).toISOString();
+    await db.run(ctx, async (w) => {
+      const p = (await w.get("posts", id)) as PostDoc | null;
+      if (!p || p.deletedAt) throw new AppError("not_found", "That post isn't there", 404);
+      editable(p);
+      await w.update("posts", id, { status: "scheduled", scheduledAt, scheduledBy: ctx.uid, scheduledVia: ctx.via, scheduleTries: null, error: null });
+    });
+    return { status: "scheduled" as const, scheduledAt };
+  },
+});
+
+export const postsUnschedule = defineCommand({
+  name: "posts.unschedule", roles: ["admin", "mcp"],
+  description: "Take a scheduled post off the schedule: it goes back to being a draft and won't post by itself. Nothing in Drive changes.",
+  input: z.strictObject({ id: z.string().min(1) }),
+  async run(ctx, { id }) {
+    const post = await postOf(ctx, id);
+    if (post.status !== "scheduled") throw new AppError("invalid_input", post.status === "publishing" ? PUBLISHING_LOCKED : "This post isn't scheduled", 409);
+    await db.update(ctx, "posts", id, { status: "draft", scheduledAt: null, scheduledBy: null, scheduledVia: null, scheduleTries: null });
+    return { status: "draft" as const };
+  },
+});
+
 export const postsTidy = defineCommand({
   name: "posts.tidy", roles: ["admin", "mcp"],
   description: "Finish tidying Drive for a posted post whose folder couldn't be renamed when it went out: renames its folder to YYYY-MM-DD - <title>. Does nothing (and says ok) when there's nothing left to tidy.",
@@ -706,5 +761,5 @@ export const postsTidy = defineCommand({
 
 export const postCommands = [
   postsSetup, postsPhotos, postsList, postsGet, postsCreateDraft, postsAddToDraft, postsUpdateDraft, postsRename, postsRemoveFromDraft, postsDeleteDraft,
-  postsPublish, postsTidy,
+  postsPublish, postsSchedule, postsUnschedule, postsTidy,
 ];

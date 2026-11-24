@@ -26,6 +26,10 @@ env:
   # .github/workflows/venue-calendars.yml on main, by its GitHub OIDC token. Not a secret.
   - variable: CRON_GITHUB_REPO
     value: zilkey/roadie
+  # Scheduled posts (src/server/scheduledPosts.ts): /api/cron/posts accepts only Cloud Scheduler's job `scheduled-posts`, by a
+  # Google OIDC token for this service account. Not a secret.
+  - variable: CRON_SCHEDULER_SA
+    value: post-scheduler@roadie-prod-iab.iam.gserviceaccount.com
   # Artists' websites (docs/designs/sites): the Firebase Hosting project their sites are served from. roadie-prod-iab for now
   # (Hosting is a separate product from App Hosting, so an app outage doesn't take sites down); roadie-sites later. Unset = the
   # in-memory fake. The backend's service account needs Firebase Hosting Admin on that project.

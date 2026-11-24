@@ -73,6 +73,7 @@ export const ALWAYS_CONFIRM: readonly string[] = [
   "tours.book", "tours.removeItem",                                                      // books a show (and can drop other options); takes a show or pitch off a tour (tours.remove asks too: *.remove)
   "campaigns.close",                                                                     // closes a booking campaign: its active pitches go back to Ongoing
   "posts.setup", "posts.publish", "posts.deleteDraft", "posts.removeFromDraft",         // shares Socials with the band; posts to Instagram; moves photos back in Drive
+  "posts.schedule",                                                                      // posts to Instagram later, by itself
 ];
 /**
  * Cards that need a tap even when the person is talking to Roadie: they change who can see things (Drive sharing,
@@ -83,7 +84,7 @@ export const VOICE_TAP_ONLY: readonly string[] = [
   "files.shareWithBand", "files.copyToBand", "drive.fix", "releases.files.copyToFolder",
   "stagePlots.shareLink", "stagePlots.shareOff",
   "songs.merge", "venues.mergeInto",
-  "posts.setup", "posts.publish",
+  "posts.setup", "posts.publish", "posts.schedule",
 ];
 /** True when a spoken yes may answer this card. The shared-room venue edit reaches every band, like a merge. */
 export function voiceConfirmable(name: string, input: unknown, hasPicks: boolean): boolean {
@@ -231,6 +232,10 @@ const SUMMARY: Record<string, (i: Record<string, any>, before?: Before) => strin
     return `Merge ${others.length ? others.map(song).join(" and ") : "the duplicate songs"} into ${song(b?.keep)}. Moving: ${moving || "everything attached"}. Blanks on the kept song are filled in, and the other${others.length === 1 ? " song is" : "s are"} archived; you can undo it`;
   },
   "posts.publish": (i, b) => `Post ${i.label ?? b?.title ?? "the post"}${typeof b?.count === "number" ? ` (${postKind(b.count, typeof b.videos === "number" ? b.videos : 0)})` : ""} to Instagram now`,
+  "posts.schedule": (i, b) => {
+    const [date, time] = typeof i.at === "string" ? i.at.split(/[ T]/) : [];
+    return `Schedule ${i.label ?? b?.title ?? "the post"}${typeof b?.count === "number" ? ` (${postKind(b.count, typeof b.videos === "number" ? b.videos : 0)})` : ""} to post to Instagram by itself${date && time ? ` on ${date} at ${time}` : ""}`;
+  },
   "posts.deleteDraft": (i, b) => `Delete the draft ${i.label ?? b?.title ?? ""}`.trimEnd() + " and put its photos back in Socials",
   "posts.removeFromDraft": (i, b) => `Take ${b?.photo ?? "the photo"} out of ${i.label ?? b?.title ?? "the draft"}`,
   "posts.setup": () => "Set up the Socials folder and let the band add to it",

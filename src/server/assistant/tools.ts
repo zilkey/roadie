@@ -396,7 +396,7 @@ async function labelFor(s: Session, name: string, input: unknown): Promise<strin
 }
 
 /** A post's card names it: its title, how many photos and videos, and the one being taken out (posts aren't records.get kinds). */
-const POST_CARDS = /^posts\.(publish|deleteDraft|removeFromDraft)$/;
+const POST_CARDS = /^posts\.(publish|schedule|deleteDraft|removeFromDraft)$/;
 async function fillPost(s: Session, input: unknown): Promise<{ input: unknown; before?: Row }> {
   const i = (input ?? {}) as Row;
   if (typeof i.id !== "string") return { input };

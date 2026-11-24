@@ -11,7 +11,7 @@ import { postKind } from "@/lib/photos";
 
 /** A post as posts.list returns it. */
 interface PostRow {
-  id: string; title?: string; status: "draft" | "publishing" | "posted" | "failed"; postedAt?: string; count: number; videos: number; thumb?: string;
+  id: string; title?: string; status: "draft" | "scheduled" | "publishing" | "posted" | "failed"; postedAt?: string; scheduledAt?: string; count: number; videos: number; thumb?: string;
   permalink?: string | null; error?: string; driveTidy?: { error: string };
 }
 
@@ -19,7 +19,7 @@ interface PostRow {
 export default function PostsPage() { return <AdminOnly><Posts /></AdminOnly>; }
 
 /**
- * Posts › Posts: the drafts (with failed posts and any being posted) first, then what's been posted to Instagram; each opens
+ * Posts › Posts: the drafts (scheduled ones first, soonest first, then failed posts and any being posted) first, then what's been posted to Instagram; each opens
  * in the editor. Photos are picked on the Photos tab. Whether Instagram is connected is said here, since posting needs it.
  */
 function Posts() {
@@ -74,6 +74,7 @@ function PostSection({ title, testid, rows, empty, onTidied }: { title: string; 
               <span className="s" data-testid="post-meta">
                 {postKind(p.count, p.videos)}
                 {p.status === "draft" && " · Draft"}
+                {p.status === "scheduled" && p.scheduledAt && <span data-testid="post-scheduled-for"> · Scheduled for {fmtInstant(p.scheduledAt, zone, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</span>}
                 {p.postedAt && ` · Posted ${fmtInstant(p.postedAt, zone)}`}
               </span>
               {p.status === "failed" && <span className="err m-0" data-testid="post-failed">Didn&apos;t post: {p.error ?? "Instagram didn't say why."}</span>}

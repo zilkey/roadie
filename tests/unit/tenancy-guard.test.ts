@@ -52,6 +52,7 @@ const SYSTEM_ALLOWED: Record<string, string> = {
   "src/server/undo.ts": "historyOfRun and runsOf see (and refuse) entries in other artists",
   "src/server/signedUrl.ts": "resolveSigned: the record is found before its signature is checked",
   "src/app/api/dev-people/route.ts": "emulator only",
+  "src/server/scheduledPosts.ts": "the scheduled-posts job finds every band's due posts, and checks the scheduler is still an admin, before any artist's ctx",
   "src/server/newArtistNotice.ts": "the new-artist email to platform admins: reads the new artist and the platform admins, in no artist's ctx",
 };
 /** `w.forArtist(id)`: only these functions, which reach an artist the ctx isn't in yet through narrow steps. */
@@ -162,6 +163,7 @@ const ROUTES: Record<string, string> = {
   "invites/[id]/[action]": "no artist: authenticatePerson builds a PersonCtx; the invite names the artist",
   "dev-people": "emulator only", "version": "none: the build id",
   "sites/img/[artistId]/[sha]": "the HMAC's artistId (siteImg scope)",
+  "cron/posts": "none: every band's due scheduled posts, each published in its own artist as whoever scheduled it; only the Cloud Scheduler job (Google OIDC for CRON_SCHEDULER_SA)",
   "cron/site-refresh": "none: every site, by its own artistId (importCtx per site); only the site-refresh GitHub workflow (OIDC)",
   "cron/venue-calendars": "none: the shared venue directory, as the system job; only the venue-calendars GitHub workflow (OIDC)",
 };
