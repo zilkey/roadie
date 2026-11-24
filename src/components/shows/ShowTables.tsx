@@ -26,7 +26,11 @@ const VenueCell = ({ s }: { s: ShowRow }) => <td className="venue">{showName(s)}
 function Head({ cols, cf }: { cols: [string, string?][]; cf: ShowField[] }) {
   return <thead><tr>{cols.map(([c, cls]) => <th key={c} className={cls}>{c}</th>)}{cf.map((f) => <th key={f.id} className="cf" data-testid={`shows-col-${f.id}`} title={f.description}>{f.label}</th>)}</tr></thead>;
 }
-const FieldCells = ({ s, cf }: { s: ShowRow; cf: ShowField[] }) => <>{cf.map((f) => <td key={f.id} className="cf">{orDash(s.fields?.find((v) => v.fieldId === f.id)?.value)}</td>)}</>;
+/** A value longer than two lines is cut with "…"; hovering shows all of it. */
+const FieldCells = ({ s, cf }: { s: ShowRow; cf: ShowField[] }) => <>{cf.map((f) => {
+  const v = s.fields?.find((x) => x.fieldId === f.id)?.value;
+  return <td key={f.id} className="cf">{v ? <span className="clamp" title={v}>{v}</span> : <Dash />}</td>;
+})}</>;
 
 /**
  * One table per Shows tab. `shows` is that tab's rows, already sorted. `fields` is the artist's show fields; those ticked "In table"

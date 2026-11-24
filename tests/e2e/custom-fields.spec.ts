@@ -116,6 +116,8 @@ test("Custom fields: a field ticked In table is a column in the Shows and Songs 
   const shows = page.getByTestId("shows-table-upcoming");
   await expect(shows.getByRole("columnheader", { name: showLabel })).toBeVisible();
   await expect(shows.getByRole("row", { name: /Holiday Inn/ })).toBeVisible();
+  // Values are cut to two lines in the table; the whole text is the hover title.
+  await expect(shows.getByRole("row", { name: /Holiday Inn/ }).locator("td.cf .clamp")).toHaveAttribute("title", "Holiday Inn");
   await page.goto(A("/songs"));
   const songs = page.getByTestId("songs-list");
   await expect(songs.getByRole("columnheader", { name: songLabel })).toBeVisible();

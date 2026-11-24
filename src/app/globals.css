@@ -391,7 +391,9 @@ dialog.pitch-dlg::backdrop { background: var(--backdrop); }
 .show-table td.venue { font-weight: 600; }
 .show-table td.addr { white-space: normal; min-width: 180px; }
 .show-table td.reason { white-space: normal; min-width: 240px; }
-.show-table td.cf { white-space: normal; min-width: 140px; }
+.show-table td.cf { white-space: normal; min-width: 140px; max-width: 260px; }
+/* A long value (notes pasted into a field) stays two lines; the whole text is its title, and on the show page. */
+.show-table td.cf .clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
 .show-table a { color: var(--accent-text); }
 .show-table .dl { font-weight: 700; text-decoration: none; color: var(--ink); border-bottom: 1.5px solid var(--line); }
 .show-table .dl:hover { border-color: var(--accent); color: var(--accent-text); }
