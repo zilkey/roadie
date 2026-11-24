@@ -120,7 +120,18 @@ async function main() {
       method: "POST", data: { permissions: NEEDS.map((n) => n.permission) },
     });
     const has = new Set(r.data.permissions ?? []);
-    const missing = NEEDS.filter((n) => !has.has(n.permission));
+    // Rules and indexes deploy whenever their roles are there; only the backup step waits on the backup roles.
+    const isBackup = (n: { permission: string }) => n.permission.startsWith("datastore.backup");
+    const missingAll = NEEDS.filter((n) => !has.has(n.permission));
+    const missing = missingAll.filter((n) => !isBackup(n));
+    const missingBackup = missingAll.filter(isBackup);
+    const grantHelp = (list: typeof NEEDS) => {
+      const roles = [...new Map(list.map((m) => [m.role, m.title])).entries()];
+      console.error(`\nOne time, as a project owner: https://console.cloud.google.com/iam-admin/iam?project=${PROJECT}`);
+      console.error(`  find ${email}, click its pencil, and add the role${roles.length > 1 ? "s" : ""}: ${roles.map(([, t]) => t).join(", ")}.`);
+      console.error(`\nOr with gcloud, logged in as the owner:`);
+      for (const [role] of roles) console.error(`  gcloud projects add-iam-policy-binding ${PROJECT} --member=serviceAccount:${email} --role=${role} --condition=None`);
+    };
     if (missing.length) {
       const roles = [...new Map(missing.map((m) => [m.role, m.title])).entries()];
       console.error(`\n${email} is missing: ${missing.map((m) => m.permission).join(", ")}.`);
@@ -145,6 +156,11 @@ async function main() {
     for (const f of ttl.data.fields ?? []) console.log(`  ${f.name.split("/collectionGroups/")[1]?.replace("/fields/", ".")}: ${f.ttlConfig?.state ?? "?"}`);
 
     console.log("\nBackups:");
+    if (missingBackup.length) {
+      console.error(`  NOT SET: ${email} is missing ${missingBackup.map((m) => m.permission).join(", ")}. Rules and indexes deployed; the backup schedules did not.`);
+      grantHelp(missingBackup);
+      process.exit(1);
+    }
     await syncBackupSchedules(client);
     await pruneLongBackups(client);
   } finally {
