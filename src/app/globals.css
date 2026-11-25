@@ -41,6 +41,24 @@
     color-scheme: dark;
   }
 }
+/* Dark picked in the avatar menu (Theme): the same colours whatever the device says. */
+:root[data-theme="dark"] {
+  --accent: #5561e8; --accent-hover: #6b76f0; --accent-soft: #262a52; --accent-text: #8f99ff; --accent-soft-text: #b3baff; --on-accent: #ffffff;
+  --ink: #ecebf2; --muted: #a3a1b0; --nav-text: #c3c1cd;
+  --strong: #ecebf2; --on-strong: #15151b;
+  --page: #15151b; --surface: #1e1e26; --input-bg: #15151b; --border: #2e2d38; --input-border: #3a3945; --divider: #292833;
+  --empty: #1a1a21; --empty-border: #4a4955;
+  --roadie-bg: #1f1d19; --roadie-border: #33302a; --roadie-chip: #2c2a24; --roadie-control-border: #3d3a33; --roadie-bubble: #2a2823;
+  --success-bg: #13301f; --success-text: #6fd39a; --success-dot: #3fb874;
+  --admin-bg: #2b2312; --admin-border: #4a3c1c; --admin-label: #e7b85a;
+  --admin-empty: #241d0f; --admin-empty-border: #5c4a22;
+  --danger: #FF9C90; --danger-soft: #4A2326; --pitched: #3fb874; --quiet: #3A3418;
+  --unfinished: #2e2814; --unfinished-text: #ecdfb8; --owed-text: #e7c870;
+  --alt-bg: #3a2416; --alt-border: #6e4223; --alt-text: #ffb07a;
+  --shadow: rgb(0 0 0 / .45); --backdrop: rgb(0 0 0 / .6);
+  --chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23a3a1b0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 6l4.5 4.5L12.5 6'/%3E%3C/svg%3E");
+  color-scheme: dark;
+}
 /* Older names the rest of this file and the pages' Tailwind classes use; each is one of the tokens above. */
 :root {
   --bg: var(--page); --panel: var(--surface); --line: var(--border); --soft: var(--divider);
@@ -249,6 +267,11 @@ fieldset.sec { margin: 0; }
 .seg label:has(input:checked) { background: var(--strong); color: var(--on-strong); }
 .seg label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; }
 .seg label:has(input:disabled) { opacity: .5; cursor: default; }
+/* A row of plain buttons in the same look (the avatar menu's Theme). */
+.seg > button { min-height: 32px; padding: 0 10px; border: 0; background: var(--panel); color: var(--ink); font: inherit; font-size: 0.8125rem; font-weight: 700; cursor: pointer; }
+.seg > button + button { border-left: 1px solid var(--line); }
+.seg > button.on { background: var(--strong); color: var(--on-strong); }
+.seg > button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .seg input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
 .fe { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--danger); font-size: 0.8125rem; font-weight: 600; }
 .input[aria-invalid="true"] { border-color: var(--danger); }
@@ -467,6 +490,7 @@ textarea.grow { resize: none; overflow: hidden; field-sizing: content; }
 .pill.canceled { background: var(--danger-soft); color: var(--danger); } .pill.canceled::before { background: #b23a26; }
 .pill.dropped { background: var(--divider); color: var(--nav-text); } .pill.dropped::before { background: #6b6a73; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .pill.hold { background: #3a2414; color: #f2a36b; } }
+:root[data-theme="dark"] .pill.hold { background: #3a2414; color: #f2a36b; }
 /* Who's playing opens Ask who's free from its own button, so the ask's built-in toggle is hidden there */
 .hide-ask-toggle [data-testid="ask-toggle"] { display: none; }
 
@@ -512,7 +536,7 @@ textarea.grow { resize: none; overflow: hidden; field-sizing: content; }
 [data-drag="above"]::before { top: -5px; }
 [data-drag="below"]::after { bottom: -5px; }
 
-/* Song detail: one centered column of cards, an uppercase label above each section, no sidebar. */
+/* Song and release detail sections: an uppercase label above each section. */
 .sg-page { display: grid; gap: 24px; max-width: 960px; margin: 0 auto; overflow-wrap: anywhere; }
 .sg-sec { display: grid; gap: 10px; min-width: 0; }
 /* The section label, and the row holding it plus a section-level action ("+ Add from Drive"). */
@@ -578,6 +602,27 @@ textarea.grow { resize: none; overflow: hidden; field-sizing: content; }
 .sl-trans-note { min-height: 2.25rem; resize: vertical; font-size: 0.875rem; }
 .sl-alt-tag { flex: none; color: var(--alt-text); font-size: 0.6875rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
 .sg-warn { display: inline-flex; align-items: center; gap: 6px; color: var(--warn); font-size: 0.8125rem; }
+/* The song page, compact: details rows and file rows tighter than the release pages' (Jeff, 2026-11-25). */
+.sf-tight .sf-box { padding: 2px 16px; }
+.sf-tight .sf-row { grid-template-columns: 112px minmax(0, 1fr); gap: 10px; padding: 1px 0; }
+.sf-tight .sf-row dt, .sf-tight .sf-row dd { min-height: 36px; }
+.sf-tight .sf-row dt { font-size: 0.8125rem; }
+.sf-tight .sf-row dd { font-size: 0.9375rem; }
+.sf-tight .sf-help { margin: 0 0 4px; font-size: 0.8125rem; }
+@container (min-width: 520px) {
+  .sf-tight .sf-cols { display: grid; grid-template-columns: 1fr 1fr; }
+  .sf-tight .sf-cols > .sf-row:nth-child(odd) { padding-right: 16px; }
+  .sf-tight .sf-cols > .sf-row:nth-child(even) { padding-left: 16px; border-left: 1px solid var(--divider); }
+  .sf-tight .sf-cols > .sf-row:nth-child(2) { border-top: 0; }
+}
+.sg-tight .sg-files > h3 { padding: 10px 16px 4px; font-size: 0.875rem; }
+.sg-tight .sg-row { gap: 6px; padding: 6px 12px 6px 16px; }
+.sg-tight .sg-rowh { flex-wrap: nowrap; gap: 6px 12px; }
+.sg-tight .sg-rowt { flex: 1 1 auto; }
+.sg-tight .sg-rowa { flex-wrap: nowrap; align-items: center; }
+.sg-tight .sg-rowa .icon-btn { width: 32px; height: 32px; min-height: 32px; }
+.sg-name { font-weight: 700; color: var(--ink); text-decoration: none; }
+.sg-name:hover { text-decoration: underline; }
 
 /* Booking detail pages (venue, festival, promoter, contact): one column of cards, shared ones carry a yellow top bar (everyone sees them), the band's private ones plain. */
 /* One column that may be narrower than its widest card: a wide table scrolls inside its card (.book-tw, .ts-scroll)

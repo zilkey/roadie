@@ -124,3 +124,9 @@ export async function setTodoDismissed(uid: string, key: string, on: boolean): P
   await ref(uid).set({ uid, todoDismissed: next }, { merge: true });
   return next;
 }
+
+/** The caller's colour theme: "auto" follows the device (the default), "light" or "dark" pins it on every device they sign in on. */
+export type Theme = "auto" | "light" | "dark";
+export async function setTheme(uid: string, theme: Theme): Promise<void> {
+  await ref(uid).set({ uid, theme }, { merge: true });
+}

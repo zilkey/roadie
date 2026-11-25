@@ -40,7 +40,7 @@ test("the song page shows its Google Doc lyrics at the bottom, chords kept over 
   // a doc without tabs has no tab bar
   await expect(card.getByTestId("doc-tabs")).toHaveCount(0);
   // at the bottom: the last section on the page
-  await expect(page.locator('[data-testid="song-page"] > section').last()).toHaveAttribute("data-testid", "doc-card");
+  await expect(page.locator('[data-testid="song-page"] section').last()).toHaveAttribute("data-testid", "doc-card");
   // the .docx chart is still only a row with its link
   await expect(page.getByTestId("files-chart").getByTestId("file-open")).toHaveAttribute("href", /fake-drive-chart-1/);
   await expect(page.getByTestId("doc-card").filter({ hasText: "chart" })).toHaveCount(0);

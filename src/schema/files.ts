@@ -2,8 +2,8 @@ import { z } from "zod";
 import { entity, serverMask, id, ts } from "./common";
 import { docContent } from "./docContent";
 
-/** What a file is. The release kinds (mix, master, session, artwork, liner, promo) only appear on files with an releaseId; poster only on files with a showId. */
-export const fileKind = z.enum(["chart", "demo", "rehearsal", "recording", "lyrics", "stems", "other", "mix", "master", "session", "artwork", "liner", "promo", "poster"]);
+/** What a file is. reference: someone else's track to learn from or sound like (usually a link).  The release kinds (mix, master, session, artwork, liner, promo) only appear on files with an releaseId; poster only on files with a showId. */
+export const fileKind = z.enum(["chart", "demo", "rehearsal", "recording", "reference", "lyrics", "stems", "other", "mix", "master", "session", "artwork", "liner", "promo", "poster"]);
 export type FileKindValue = z.infer<typeof fileKind>;
 
 /** A note someone left on a mix ("Guitar solo a touch quieter."). */

@@ -49,11 +49,13 @@ export const STATUS_LABEL: Record<SongStatus, string> = { active: "Playing", lea
 /** The order the song page's status dropdown lists them in. */
 export const STATUS_ORDER: SongStatus[] = ["active", "learning", "writing", "retired"];
 
-export type FileKind = "chart" | "demo" | "rehearsal" | "recording" | "lyrics" | "stems" | "other" | "mix" | "master" | "session" | "artwork" | "liner" | "promo" | "poster";
+export type FileKind = "chart" | "demo" | "rehearsal" | "recording" | "reference" | "lyrics" | "stems" | "other" | "mix" | "master" | "session" | "artwork" | "liner" | "promo" | "poster";
 /** The kinds a song's files come in (the release kinds live on releases and their tracks, see lib/releases). */
-export const KIND_ORDER: FileKind[] = ["chart", "demo", "recording", "rehearsal", "lyrics", "stems", "other"];
+export const KIND_ORDER: FileKind[] = ["chart", "demo", "recording", "reference", "rehearsal", "lyrics", "stems", "other"];
+/** What a pasted link can be on a song (the Add link form). */
+export const LINK_KINDS: FileKind[] = ["reference", "demo", "recording"];
 export const KIND_LABEL: Record<FileKind, string> = {
-  chart: "Charts", demo: "Demos", recording: "Recordings", rehearsal: "Rehearsal takes", lyrics: "Lyrics", stems: "Stems", other: "Other",
+  chart: "Charts", demo: "Demos", recording: "Recordings", reference: "References", rehearsal: "Rehearsal takes", lyrics: "Lyrics", stems: "Stems", other: "Other",
   mix: "Mixes", master: "Masters", session: "Session files", artwork: "Artwork", liner: "Liner notes and credits", promo: "Promo", poster: "Posters",
 };
 
@@ -65,7 +67,7 @@ export function fileGroup(f: { mimeType?: string; kind?: FileKind }): MimeGroup 
   const g = mimeGroup(f.mimeType);
   if (g !== "other") return g;
   if (f.kind === "chart" || f.kind === "lyrics") return "doc";
-  if (f.kind === "demo" || f.kind === "rehearsal" || f.kind === "recording" || f.kind === "stems" || f.kind === "mix" || f.kind === "master") return "audio";
+  if (f.kind === "demo" || f.kind === "rehearsal" || f.kind === "recording" || f.kind === "reference" || f.kind === "stems" || f.kind === "mix" || f.kind === "master") return "audio";
   return "other";
 }
 

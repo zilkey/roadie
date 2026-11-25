@@ -31,7 +31,8 @@
 .k-opens { background: var(--success-bg); color: var(--success-text); }
 .k-seriesStart { background: var(--divider); color: var(--ink); border-color: var(--muted); }
 .k-festivalDay { background: transparent; color: var(--accent-soft-text); border-color: var(--accent); }
-@media (prefers-color-scheme: dark) { .k-nextStep { color: #2b0a16; } .k-deadline { background: #d97706; } .k-deadline.outl { color: #f0a640; border-color: #f0a640; background: transparent; } }
+@media (prefers-color-scheme: dark) { :global(:root:not([data-theme="light"])) .k-nextStep { color: #2b0a16; } :global(:root:not([data-theme="light"])) .k-deadline { background: #d97706; } :global(:root:not([data-theme="light"])) .k-deadline.outl { color: #f0a640; border-color: #f0a640; background: transparent; } }
+:global(:root[data-theme="dark"]) .k-nextStep { color: #2b0a16; } :global(:root[data-theme="dark"]) .k-deadline { background: #d97706; } :global(:root[data-theme="dark"]) .k-deadline.outl { color: #f0a640; border-color: #f0a640; background: transparent; }
 .past { text-decoration: line-through; opacity: .7; }
 .more { font-size: 0.7188rem; color: var(--muted); font-weight: 600; }
 .dot { display: inline-block; width: 8px; height: 8px; flex: none; }
@@ -79,11 +80,13 @@
 .k-tnote { background: transparent; color: var(--muted); border-color: transparent; font-weight: 600; }
 .k-topen { background: transparent; color: #0f766e; border-color: #0f766e; border-style: dashed; }
 .k-twarn { background: #fdf1dc; color: #7a4b00; border-color: #e8c27a; }
-@media (prefers-color-scheme: dark) { .k-topen { color: #5eead4; border-color: #5eead4; } .k-tdrive { background: color-mix(in srgb, #fff 12%, var(--panel)); border-color: color-mix(in srgb, #fff 25%, var(--panel)); } .k-tstay { border-color: color-mix(in srgb, #fff 25%, var(--panel)); } }
+@media (prefers-color-scheme: dark) { :global(:root:not([data-theme="light"])) .k-topen { color: #5eead4; border-color: #5eead4; } :global(:root:not([data-theme="light"])) .k-tdrive { background: color-mix(in srgb, #fff 12%, var(--panel)); border-color: color-mix(in srgb, #fff 25%, var(--panel)); } :global(:root:not([data-theme="light"])) .k-tstay { border-color: color-mix(in srgb, #fff 25%, var(--panel)); } }
+:global(:root[data-theme="dark"]) .k-topen { color: #5eead4; border-color: #5eead4; } :global(:root[data-theme="dark"]) .k-tdrive { background: color-mix(in srgb, #fff 12%, var(--panel)); border-color: color-mix(in srgb, #fff 25%, var(--panel)); } :global(:root[data-theme="dark"]) .k-tstay { border-color: color-mix(in srgb, #fff 25%, var(--panel)); }
 .sw.k-tour { background: #2b2a33; border-radius: 4px; }
 .tourList { display: grid; gap: 4px; margin: 0; padding-left: 18px; list-style: disc; font-size: 0.875rem; }
 .tourWarnLine { color: #7a4b00; font-weight: 800; }
-@media (prefers-color-scheme: dark) { .tourWarnLine { color: #f0a640; } }
+@media (prefers-color-scheme: dark) { :global(:root:not([data-theme="light"])) .tourWarnLine { color: #f0a640; } }
+:global(:root[data-theme="dark"]) .tourWarnLine { color: #f0a640; }
 .toggle { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 6px; border: 0; background: none; color: var(--ink); font: inherit; font-size: 0.875rem; font-weight: 700; cursor: pointer; border-radius: 10px; }
 .toggle:focus-visible { outline: 2px solid var(--accent); }
 .track { position: relative; width: 32px; height: 18px; border-radius: 999px; background: var(--border); flex: none; transition: background .15s; }

@@ -15,7 +15,7 @@ import { showName, type ShowPlaceLike } from "@/lib/shows";
 import { SongInput, dateStr, timeStr, rehearsalLocation } from "@/schema";
 import { artistFor, defaultProjectIdFor, requireOpenProject } from "./projects";
 
-const kindEnum = z.enum(["chart", "demo", "rehearsal", "recording", "lyrics", "stems", "other"]);
+const kindEnum = z.enum(["chart", "demo", "rehearsal", "recording", "reference", "lyrics", "stems", "other"]);
 // Exactly one of driveFileId (looked up in Drive) or url (a Spotify/YouTube/web link, no lookup; provider is guessed from the url unless given).
 const AttachDrive = z.strictObject({ driveFileId: z.string().min(1), kind: kindEnum.optional(), key: z.string().optional(), title: z.string().optional() });
 const AttachLink = z.strictObject({ url: z.string().url(), provider: z.enum(["spotify", "youtube", "web"]).optional(), kind: kindEnum.optional(), title: z.string().optional(), description: z.string().optional() });

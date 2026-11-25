@@ -15,6 +15,7 @@ import { toast } from "@/components/Toasts";
 import { recordPath } from "@/lib/navHistory";
 import { useFansBadge, useFansOn } from "@/lib/fans-client";
 import { DayOfBanner } from "@/components/DayOfBanner";
+import { ThemeChoice } from "@/components/Theme";
 
 function Icon({ d, size = 22 }: { d: string; size?: number }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d={d} /></svg>;
@@ -64,7 +65,7 @@ export function Dropdown({ label, testid, trigger, className, listTestid, left, 
 
 /**
  * The avatar menu's rows: your name, your profile, Customize menu, Integrations (admins), Preview as band member
- * (admins; Exit preview while previewing), Sign out. On desktop, band
+ * (admins; Exit preview while previewing), Theme (Auto / Light / Dark), Sign out. On desktop, band
  * settings and the switcher live in the band menu; the phone bar has no band menu, so `phone` puts Switch band and
  * Artist settings (admins) here instead.
  */
@@ -85,6 +86,7 @@ function AccountItems({ name, role, signOut, signoutTestid, switchTo, phone, onE
           {previewAsMember ? "Exit preview" : "Preview as band member"}
         </button>
       )}
+      <ThemeChoice testid={phone ? "theme-mobile" : "theme"} />
       <div className="menu-sep" role="separator" />
       <button type="button" role="menuitem" className="menu-item" data-testid={signoutTestid} onClick={signOut}>Sign out</button>
     </>

@@ -109,8 +109,9 @@ test("add a song and attach files picked from a Drive search", async ({ page }) 
   for (const label of ["Chart in E", "Chart in G"]) await expect(page.getByTestId("files-chart").getByTestId("file-label").filter({ hasText: label })).toBeVisible();
   await expect(page.getByTestId("files-demo")).toContainText("Last Train to Lyons demo.m4a");
   await expect(page.getByTestId("files-lyrics")).toBeVisible();
-  // a wrong guess is fixed on the row: the demo becomes a recording and moves to Recordings
-  await page.getByTestId("files-demo").getByTestId("file-kind").selectOption("recording");
+  // a wrong guess is fixed from the row's menu: the demo becomes a recording and moves to Recordings
+  await page.getByTestId("files-demo").getByTestId("file-actions").click();
+  await page.getByTestId("files-demo").getByTestId("file-menu-kind-recording").click();
   await expect(page.getByTestId("files-recording")).toContainText("Last Train to Lyons demo.m4a");
   await expect(page.getByTestId("files-demo")).toHaveCount(0);
   // Upload a demo puts it in the Demos folder (Settings > Google) under its own name and lists it under Demos
@@ -274,13 +275,13 @@ test("a member opens a song and sees its files, with no edit controls", async ({
   await expect(page.getByTestId("page-title")).toHaveText("Glass Coast");
   await expect(page.getByTestId("files-chart").getByTestId("file-label")).toHaveText("Chart in F#m");
   await expect(page.getByTestId("files-demo")).toContainText("Glass Coast demo v3.m4a");
-  // not directly playable here, so it opens the Drive link
+  // the name opens the file in Drive, in a new tab
   const open = page.getByTestId("files-demo").getByTestId("file-open");
-  await expect(open).toHaveText(/^Open/);
+  await expect(open).toHaveText("Glass Coast demo v3.m4a");
   await expect(open).toHaveAttribute("href", /fake-drive-demo-1/);
   await expect(open).toHaveAttribute("target", "_blank");
   await expect(page.getByTestId("last-rehearsed")).toContainText("Oct 18");
-  for (const t of ["field-key-input", "add-from-drive", "song-upload-actions", "run-sharing-check", "fix-share", "fix-copy", "file-remove", "file-kind", "file-gap"]) await expect(page.getByTestId(t)).toHaveCount(0);
+  for (const t of ["field-key-input", "add-from-drive", "song-upload-actions", "add-link", "song-actions", "fix-share", "fix-copy", "file-actions", "file-gap"]) await expect(page.getByTestId(t)).toHaveCount(0);
 
   // setlists and rehearsals are readable, read-only
   await page.goto(A("/setlists"));
@@ -427,53 +428,67 @@ test("a new song is a draft; an existing song autosaves with Undo", async ({ pag
   await expect(page.getByTestId("field-length")).not.toHaveText("4:00");
 });
 
-test("a song's Links: paste Spotify, YouTube and web links, play them on the page, remove one", async ({ page }) => {
+test("a song's links: paste Spotify, YouTube and web links as references, demos or recordings, play them on the page, remove one", async ({ page }) => {
   await signInAs(page, "rudy");
   await newSong(page, "Linkwork");
   await page.getByTestId("save-song").click();
   await expect(page.getByTestId("song-page")).toBeVisible();
-  const links = page.getByTestId("song-links");
-  await expect(links.getByTestId("no-links")).toBeVisible();
-  // a blank name reads as where the link goes
-  await links.getByTestId("add-link").click();
-  await links.getByTestId("link-url").fill("https://open.spotify.com/track/linkwork");
-  await links.getByTestId("link-save").click();
-  await expect(links.getByTestId("add-link-form")).toBeHidden();
-  await expect(links.getByTestId("links-list").getByTestId("file-label")).toHaveText(["Spotify"]);
-  await links.getByTestId("add-link").click();
-  await links.getByTestId("link-url").fill("https://www.youtube.com/watch?v=linkwork01");
-  await links.getByTestId("link-title").fill("Live at the Deep End");
-  await links.getByTestId("link-description-new").fill("Reference track: the drum feel");
-  await links.getByTestId("link-save").click();
-  await expect(links.getByTestId("add-link-form")).toBeHidden();
+  const files = page.getByTestId("song-files");
+  await expect(files.getByTestId("no-files")).toBeVisible();
+  // a blank name reads as where the link goes; a link is a Reference unless picked otherwise
+  await files.getByTestId("add-link").click();
+  await files.getByTestId("link-url").fill("https://open.spotify.com/track/linkwork");
+  await files.getByTestId("link-save").click();
+  await expect(files.getByTestId("add-link-form")).toBeHidden();
+  await expect(files.getByTestId("files-reference").getByTestId("file-label")).toHaveText(["Spotify"]);
+  await files.getByTestId("add-link").click();
+  await files.getByTestId("link-url").fill("https://www.youtube.com/watch?v=linkwork01");
+  await files.getByTestId("link-title").fill("Live at the Deep End");
+  await files.getByTestId("link-kind").selectOption("recording");
+  await files.getByTestId("link-description-new").fill("Reference track: the drum feel");
+  await files.getByTestId("link-save").click();
+  await expect(files.getByTestId("add-link-form")).toBeHidden();
+  await expect(files.getByTestId("files-recording").getByTestId("file-label")).toHaveText(["Live at the Deep End"]);
   // no scheme is fine; any other page is named by its site
-  await links.getByTestId("add-link").click();
-  await links.getByTestId("link-url").fill("soundcloud.com/band/linkwork");
-  await links.getByTestId("link-save").click();
-  await expect(links.getByTestId("add-link-form")).toBeHidden();
-  await expect(links.getByTestId("file-label")).toHaveText(["Live at the Deep End", "SoundCloud", "Spotify"]);
+  await files.getByTestId("add-link").click();
+  await files.getByTestId("link-url").fill("soundcloud.com/band/linkwork");
+  await files.getByTestId("link-save").click();
+  await expect(files.getByTestId("add-link-form")).toBeHidden();
+  await expect(files.getByTestId("files-reference").getByTestId("file-label")).toHaveText(["SoundCloud", "Spotify"]);
   // the description shows under the link, and is edited in place
-  const ref = links.locator(".sg-row").filter({ hasText: "Live at the Deep End" });
+  const ref = files.locator(".sg-row").filter({ hasText: "Live at the Deep End" });
   await expect(ref.getByTestId("link-description")).toHaveText("Reference track: the drum feel");
   await ref.getByTestId("link-description").click();
   await ref.getByTestId("link-description-input").fill("Reference track: the drum feel in the chorus");
   await ref.getByTestId("link-description-input").blur();
   await expect(ref.getByTestId("link-description")).toHaveText("Reference track: the drum feel in the chorus");
-  await expect(links.locator(".sg-row").filter({ hasText: "Spotify" }).getByTestId("link-description")).toHaveText("Add a description…");
-  // links never land in Charts & recordings, and have no kind to pick
-  await expect(page.getByTestId("no-files")).toBeVisible();
-  await expect(links.getByTestId("file-kind")).toHaveCount(0);
+  // a link with no description shows none; the row's menu adds one
+  const spotify = files.locator(".sg-row").filter({ hasText: "Spotify" });
+  await expect(spotify.getByTestId("link-description")).toHaveCount(0);
+  await spotify.getByTestId("file-actions").click();
+  await spotify.getByTestId("file-menu-describe").click();
+  await spotify.getByTestId("link-description-input").fill("The pitch link");
+  await spotify.getByTestId("link-description-input").blur();
+  await expect(spotify.getByTestId("link-description")).toHaveText("The pitch link");
+  // a link's kind is changed from its menu too: references, demos or recordings only
+  await spotify.getByTestId("file-actions").click();
+  await expect(spotify.getByTestId("file-menu").getByRole("menuitemradio")).toHaveText([/References$/, /Demos$/, /Recordings$/]);
+  await spotify.getByTestId("file-menu-kind-demo").click();
+  await expect(files.getByTestId("files-demo").getByTestId("file-label")).toHaveText(["Spotify"]);
   // YouTube plays on the page
-  const yt = links.locator(".sg-row").filter({ hasText: "Live at the Deep End" });
+  const yt = files.locator(".sg-row").filter({ hasText: "Live at the Deep End" });
   await yt.getByTestId("file-play").click();
   await expect(yt.getByTestId("player-embed")).toBeVisible();
   // the same link twice is skipped, and says so
-  await links.getByTestId("add-link").click();
-  await links.getByTestId("link-url").fill("https://open.spotify.com/track/linkwork");
-  await links.getByTestId("link-save").click();
-  await expect(links.getByTestId("add-link-form")).toBeHidden();
-  await expect(links.getByTestId("link-msg")).toHaveText("That link is already on this song.");
+  await files.getByTestId("add-link").click();
+  await files.getByTestId("link-url").fill("https://open.spotify.com/track/linkwork");
+  await files.getByTestId("link-save").click();
+  await expect(files.getByTestId("link-msg")).toHaveText("That link is already on this song.");
+  await files.getByTestId("add-link").click();
+  await expect(files.getByTestId("add-link-form")).toBeHidden();
   page.once("dialog", (d) => d.accept());
-  await links.locator(".sg-row").filter({ hasText: "SoundCloud" }).getByTestId("file-remove").click();
-  await expect(links.getByTestId("file-label")).toHaveText(["Live at the Deep End", "Spotify"]);
+  const sc = files.locator(".sg-row").filter({ hasText: "SoundCloud" });
+  await sc.getByTestId("file-actions").click();
+  await sc.getByTestId("file-remove").click();
+  await expect(files.getByTestId("file-label")).toHaveText(["Spotify", "Live at the Deep End"]);
 });

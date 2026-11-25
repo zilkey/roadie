@@ -13,7 +13,7 @@ import { useAutosave } from "@/lib/autosave";
 import { Dialog, ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { useProfile } from "@/lib/auth";
 import { todayStr } from "@/lib/booking";
-import { daysAgoLabel, driveIdFromUrl, fmtLen, linkName, refsLabel, songRefs, STATUS_LABEL, KIND_LABEL, KIND_ORDER, lastRehearsed, parseLen, playerFor, playsInline, PROVIDER_LABEL, providerFor, STATUS_ORDER, type FileKind, type SongStatus } from "@/lib/music";
+import { daysAgoLabel, driveIdFromUrl, fmtLen, linkName, refsLabel, songRefs, STATUS_LABEL, KIND_LABEL, KIND_ORDER, LINK_KINDS, lastRehearsed, parseLen, playerFor, playsInline, PROVIDER_LABEL, providerFor, STATUS_ORDER, type FileKind, type SongStatus } from "@/lib/music";
 import { FileIcon, Missing, fmtDay, useMusic, type FileRow, type SongRow } from "@/components/music/common";
 import { DrivePicker, NoBandFolder, NoChartsFolder, type Pick } from "@/components/music/DrivePicker";
 import { UploadMenu, type UploadChoice } from "@/components/music/Upload";
@@ -51,6 +51,7 @@ function Player({ file }: { file: FileRow }) {
 function FileLine({ file, m, admin }: { file: FileRow; m: ReturnType<typeof useMusic>; admin: boolean }) {
   const { call, error, busy } = useCommand();
   const [open, setOpen] = useState(false);
+  const [describing, setDescribing] = useState(false);
   const audio = playsInline(file);
   const inline = audio || playerFor(file).mode !== "link";
   // Sharing and band-folder checks are Drive facts: a Spotify/YouTube/web link has neither, so it never shows (or lies about) them.
@@ -71,40 +72,45 @@ function FileLine({ file, m, admin }: { file: FileRow; m: ReturnType<typeof useM
   // Copy to band folder copies into the Charts folder; until it's chosen the row says so instead of offering the button.
   const hasCharts = !!artistDoc?.chartsFolderId;
   const outside = checked && hasFolder && !file.inBandFolder;
+  // The kind is guessed when a file is added; an admin corrects it from the row's menu. A link is a reference, demo or
+  // recording; a Drive file any song kind (a Google Doc reads inline at the bottom only as Lyrics or Charts).
+  const choices = isDrive ? KIND_ORDER : LINK_KINDS;
+  const kinds = choices.includes(file.kind) ? choices : [...choices, file.kind];
+  const describe = !isDrive && (describing || !!file.description);
   return (
     <div className="sg-row" data-testid={`file-${file.id}`}>
       <div className="sg-rowh">
         <FileIcon mime={file.mimeType} kind={file.kind} provider={isDrive ? undefined : provider} />
         <span className="sg-rowt">
-          <b className="truncate" data-testid="file-label">{label}</b>
+          {/* The name opens the file (Drive, Spotify, YouTube or the page) in a new tab. */}
+          <a href={file.url} target="_blank" rel="noreferrer" className="sg-name truncate" title={provider === "web" ? "Open link" : `Open in ${where}`} data-testid="file-open">
+            <span data-testid="file-label">{label}</span>
+          </a>
           {label !== file.title && <span className="s truncate">{file.title}</span>}
-          {/* The sharing state reads under the name: unchecked is a warning, a real gap lists who is locked out. */}
-          {admin && isDrive && !checked && <span className="sg-warn" data-testid="file-unchecked">Not checked yet — run the sharing check.</span>}
+          {/* Only a problem reads under the name: unchecked is a warning, a real gap lists who is locked out. */}
+          {admin && isDrive && !checked && <span className="sg-warn" data-testid="file-unchecked">Not checked yet — run the sharing check (More).</span>}
           {admin && checked && names.length > 0 && <span className="sg-warn" data-testid="cant-open">Can&apos;t open: {names.join(", ")}</span>}
           {admin && outside && <span className="sg-warn">Outside the band folder ({file.ownerEmail}).</span>}
-          {admin && checked && names.length === 0 && !outside && <span className="s" data-testid="file-ok">Everyone can open this.</span>}
+          {/* A link's description (a reference track and what to listen for): click to edit, blank clears it. */}
+          {describe && (
+            <InlineValue testid="link-description" label={`Description of ${file.title}`} kind="textarea" value={file.description ?? ""} canEdit={admin} autoStart={describing && !file.description}
+              emptyLabel="Add a description…" placeholder="What is it? (a reference track, what to listen for…)" className="sf-note s"
+              onSave={async (v) => { const ok = v.trim() === (file.description ?? "") || !!(await call("files.update", { id: file.id, patch: { description: v.trim() || null } })); if (ok) setDescribing(false); return ok; }} error={error} />
+          )}
         </span>
         <span className="sg-rowa">
           {audio ? <PlayToggle file={file} open={open} onOpen={setOpen} />
             : inline && <button className="btn ghost sm" onClick={() => setOpen(!open)} aria-expanded={open} data-testid="file-play">{open ? "Hide" : "Play"}</button>}
-          {/* The kind is guessed from the name when a file is added; an admin can correct it here (a Google Doc reads
-              inline at the bottom only as Lyrics or Charts). */}
-          {admin && isDrive && (
-            <select className="select !w-auto" aria-label={`Kind of ${file.title}`} value={file.kind} disabled={busy} data-testid="file-kind"
-              onChange={(e) => call("files.update", { id: file.id, patch: { kind: e.target.value as FileKind } })}>
-              {(KIND_ORDER.includes(file.kind) ? KIND_ORDER : [...KIND_ORDER, file.kind]).map((k) => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
-            </select>
+          {admin && (
+            <Menu label={`More for ${file.title}`} testid="file" items={[
+              ...kinds.map((k) => ({ key: `kind-${k}`, label: KIND_LABEL[k], checked: file.kind === k, onSelect: () => { if (k !== file.kind) call("files.update", { id: file.id, patch: { kind: k } }); } })),
+              ...(!isDrive ? [{ key: "describe", label: file.description ? "Edit description" : "Add description", divider: true, onSelect: () => setDescribing(true) }] : []),
+              { key: "remove", label: "Remove…", danger: true, divider: true, disabled: busy, testid: "file-remove",
+                onSelect: () => { if (confirm(`Remove ${file.title} from this song? ${isDrive ? "The Drive file stays put." : "The link itself is untouched."}`)) call("files.remove", { id: file.id }); } },
+            ]} />
           )}
-          <a className="btn ghost sm" href={file.url} target="_blank" rel="noreferrer" data-testid="file-open">{inline && !audio ? where : provider === "web" ? "Open link" : `Open in ${where}`}</a>
-          {admin && <button className="btn danger sm" disabled={busy} onClick={() => confirm(`Remove ${file.title} from this song? ${isDrive ? "The Drive file stays put." : "The link itself is untouched."}`) && call("files.remove", { id: file.id })} data-testid="file-remove">Remove</button>}
         </span>
       </div>
-      {/* A link's description (a reference track and what to listen for): click to edit, blank clears it. */}
-      {!isDrive && (admin || file.description) && (
-        <InlineValue testid="link-description" label={`Description of ${file.title}`} kind="textarea" value={file.description ?? ""} canEdit={admin}
-          emptyLabel="Add a description…" placeholder="What is it? (a reference track, what to listen for…)" className="sf-note s"
-          onSave={async (v) => v.trim() === (file.description ?? "") || !!(await call("files.update", { id: file.id, patch: { description: v.trim() || null } }))} error={error} />
-      )}
       {open && inline && <Player file={file} />}
       {admin && checked && (names.length > 0 || outside || !hasFolder) && (
         <div className="flex flex-wrap items-center gap-2" data-testid="file-gap">
@@ -160,10 +166,10 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
   const [adding, setAdding] = useState(false);
   const [picks, setPicks] = useState<Pick[]>([]);
   const [checkMsg, setCheckMsg] = useState("");
-  // Drive files are the charts and recordings; a Spotify, YouTube or web link has no driveFileId and lists under Links.
+  const [linking, setLinking] = useState(false);
+  // Drive files and Spotify/YouTube/web links list together, grouped by kind (Charts, Demos, References...).
   const all = m.files.filter((f) => f.songId === song.id);
   const files = all.filter((f) => f.driveFileId);
-  const links = all.filter((f) => !f.driveFileId).sort((a, b) => a.title.localeCompare(b.title));
   const last = lastRehearsed(m.rehearsals)[song.id];
   const zone = useZone();
   const today = todayStr(zone);
@@ -179,8 +185,9 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
     if (r) setCheckMsg(`Checked ${r.checked} files: ${r.withGaps} the band can't open${r.outsideBandFolder === null ? "" : `, ${r.outsideBandFolder} outside the band folder`}${r.errors.length ? `, ${r.errors.length} not found in Drive` : ""}.`);
   }
 
+  const meta = [song.key, song.bpm ? `${song.bpm} bpm` : null, song.lengthSec ? fmtLen(song.lengthSec) : null].filter(Boolean).join(" · ");
   return (
-    <div className="sg-page" data-testid="song-page">
+    <div className="sg-page !max-w-none" data-testid="song-page">
       <PageTitle
         back={<BackLink mode="back" href={song.status === "writing" ? "/songs?seg=writing" : "/songs"} label="All songs" />}
         title={song.title}
@@ -189,7 +196,8 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
           <span className={`pill${shown === "active" ? " ok" : ""}`} data-testid="song-status">{STATUS_LABEL[shown]}</span>
           <Metronome id={song.id} bpm={song.bpm} title={song.title} />
         </>}
-        sub={[song.key, song.bpm ? `${song.bpm} bpm` : null, song.lengthSec ? fmtLen(song.lengthSec) : null].filter(Boolean).join(" · ") || undefined}
+        // Key · bpm · length, then the releases it's on (admins, like Releases itself): one small link per track.
+        sub={meta || admin ? <>{meta}{admin && <ReleaseLinks songId={song.id} lead={!!meta} />}</> : undefined}
         actions={admin ? <>
           {/* Conflicts and failed saves still surface here; the plain Saved tick sits beside each value. */}
           <SaveStatus {...as.statusProps} />
@@ -197,16 +205,20 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
             items={[
               // The status is a choice in the menu: picking one saves at once, with the usual Saved + Undo toast.
               ...STATUS_ORDER.map((s) => ({ key: `status-${s}`, label: STATUS_LABEL[s], checked: shown === s, onSelect: () => setStatusTo(s) })),
+              // The band-wide Drive sharing check (every song's files), with when it last ran.
+              { key: "sharing-check", label: "Run sharing check", sub: lastCheck ? `Last checked ${lastCheck}` : "Never checked", divider: true, disabled: busy, testid: "run-sharing-check", onSelect: check },
               { key: "archive", label: "Archive song…", danger: true, divider: true, disabled: busy, onSelect: () => setArchiving(true) },
             ]} />
           {archiving && <ArchiveSongDialog song={song} m={m} onClose={() => setArchiving(false)} onRetire={() => { setArchiving(false); setStatusTo("retired"); }} />}
         </> : undefined} />
+      <div className="show-cols">
+      <div className="show-main">
       <section className="sg-sec" aria-labelledby="song-details-h">
         <h2 id="song-details-h" className="sg-lbl">Details</h2>
         {/* No page-wide Edit: each value is its own control for admins (saved on blur or Enter, Escape reverts); members see plain text. */}
-        {/* Rounded boxes side by side, each a list of label | value rows: the song itself, its history, then the artist's own fields. */}
-        <div className="sf-grid" data-testid="song-fields">
-          <dl className="card sf-box">
+        {/* One compact box of label | value rows in two columns (the song, then its history), then the artist's own fields, then the free text. */}
+        <div className="sf-grid sf-tight" data-testid="song-fields">
+          <dl className="card sf-box sf-wide sf-cols">
             {admin && <div className="sf-row"><dt className="lbl">Title</dt><dd><InlineValue testid="field-title" label="Title" kind="text" value={text("title", song.title)} canEdit
               validate={(v) => (v ? null : "A song needs a title")} onSave={(v) => save("title", v, { title: v })} error={as.error} /></dd></div>}
             {admin && <div className="sf-row"><dt className="lbl">Short title</dt><dd><InlineValue testid="field-short-title" label="Short title" kind="text" value={text("shortTitle", song.shortTitle)} canEdit
@@ -216,8 +228,6 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
               onSave={(v) => save("bpm", v, { bpm: v === "" ? null : Number(v) })} error={as.error} /></dd></div>
             <div className="sf-row"><dt className="lbl">Key</dt><dd><InlineValue testid="field-key" label="Key" kind="text" value={text("key", song.key)} canEdit={admin}
               onSave={(v) => save("key", v, { key: v || null })} error={as.error} /></dd></div>
-          </dl>
-          <dl className="card sf-box">
             <div className="sf-row"><dt className="lbl">Length</dt><dd><InlineValue testid="field-length" label="Length" kind="text" placeholder="3:52" value={mine.length ?? fmtLen(song.lengthSec)} canEdit={admin}
               validate={(v) => (v === "" || parseLen(v) !== undefined ? null : "Length looks like 3:52")}
               onSave={(v) => save("length", v, { lengthSec: v === "" ? null : parseLen(v) })} error={as.error} /></dd></div>
@@ -250,36 +260,23 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
         </div>
       </section>
 
-      {/* The song's to-dos: named lists like a show's (song templates). Members tick and add items; lists are admins'. */}
-      <section className="sg-sec" aria-label="To dos" data-testid="song-todos">
-        <ChecklistSidebar host={{ kind: "song", id: song.id, artistId, checklists: song.checklists ?? [] }} admin={admin} title="To dos" />
-      </section>
-
-      {admin && <OnReleases songId={song.id} />}
-
-      <section className="sg-sec" aria-labelledby="song-files-h">
+      <section className="sg-sec sg-tight" aria-labelledby="song-files-h" data-testid="song-files">
         <div className="sg-sech">
-          <h2 id="song-files-h" className="sg-lbl">Charts &amp; recordings</h2>
+          <h2 id="song-files-h" className="sg-lbl">Files &amp; links</h2>
           {admin && (
             <div className="flex flex-wrap items-start gap-2">
               {/* Upload ▾ Demo or Chart: a demo goes to the Demos folder, a chart to the Charts folder, and a Writing song's
                   uploads both to the Songwriting folder. The route picks the folder from the kind and the song's status. */}
               <UploadMenu key={song.status === "writing" ? "writing" : "song"} url={`/api/songs/${encodeURIComponent(song.id)}/upload`} testid="song-upload"
                 tooBig="Trim it, or put it in Drive yourself and add it from Drive." choices={uploadChoices(song.status === "writing", artistDoc)} />
-              <button className="btn acc" onClick={() => setAdding(!adding)} data-testid="add-from-drive">{adding ? "Cancel" : "+ Add from Drive"}</button>
+              <button className="btn outline" onClick={() => { setAdding(!adding); setLinking(false); }} data-testid="add-from-drive">{adding ? "Cancel" : "+ From Drive"}</button>
+              <button className="btn outline" onClick={() => { setLinking(!linking); setAdding(false); }} data-testid="add-link">{linking ? "Cancel" : "+ Link"}</button>
             </div>
           )}
         </div>
 
         {admin && (
           <>
-            <div className="sg-strip">
-              <span className="sg-strip-t">
-                <b>Sharing check</b>
-                <span className="s" data-testid="checked-at">{lastCheck ? `Last checked ${lastCheck}` : "Never checked"}</span>
-              </span>
-              <button className="btn outline" disabled={busy} onClick={check} data-testid="run-sharing-check">Run sharing check</button>
-            </div>
             {checkMsg && <span className="s" data-testid="check-result">{checkMsg}</span>}
             {!artistDoc?.driveFolderId && files.some((f) => f.driveFileId) && <NoBandFolder />}
             {adding && (
@@ -288,12 +285,14 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
                 <button className="btn acc" disabled={busy || picks.length === 0} onClick={attach} data-testid="attach-files">Attach {picks.length || ""} file{picks.length === 1 ? "" : "s"}</button>
               </div>
             )}
+            {linking && <AddLinkForm songId={song.id} onDone={() => setLinking(false)} />}
           </>
         )}
 
-        {files.length === 0 && <div className="empty" data-testid="no-files"><span>No files yet.</span></div>}
-        {KIND_ORDER.map((k) => {
-          const list = files.filter((f) => f.kind === k).sort((a, b) => (a.key ?? "").localeCompare(b.key ?? "") || a.title.localeCompare(b.title));
+        {all.length === 0 && <div className="empty" data-testid="no-files"><span>No files or links yet.</span></div>}
+        {KIND_ORDER.concat(Array.from(new Set(all.map((f) => f.kind))).filter((k) => !KIND_ORDER.includes(k))).map((k) => {
+          // Drive files first (charts by key), then links, each by name.
+          const list = all.filter((f) => f.kind === k).sort((a, b) => Number(!a.driveFileId) - Number(!b.driveFileId) || (a.key ?? "").localeCompare(b.key ?? "") || a.title.localeCompare(b.title));
           if (!list.length) return null;
           return (
             <div key={k} className="sg-files" data-testid={`files-${k}`}>
@@ -303,10 +302,15 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
           );
         })}
       </section>
+      </div>
 
-      {(admin || links.length > 0) && <SongLinks songId={song.id} links={links} m={m} admin={admin} />}
+      {/* The song's to-dos: named lists like a show's (song templates), in the right-hand column like a show's checklists. Members tick and add items; lists are admins'. */}
+      <aside className="show-side" aria-label="To dos" data-testid="song-todos">
+        <ChecklistSidebar host={{ kind: "song", id: song.id, artistId, checklists: song.checklists ?? [] }} admin={admin} title="To dos" />
+      </aside>
 
       {/* Each attached Google Doc (lyrics, then charts) read inline, at the bottom of the page. Word and PDF files stay links above. */}
+      <div className="show-main show-after">
       {googleDocsOf(files, song.id).map((f) => (
         <section key={f.id} className="sg-sec" aria-labelledby={`doc-${f.id}-h`} data-testid="doc-card">
           <h2 id={`doc-${f.id}-h`} className="sg-lbl" data-testid="doc-title">{f.title}</h2>
@@ -314,6 +318,8 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
         </section>
       ))}
       <ErrorBox error={error} />
+      </div>
+      </div>
     </div>
   );
 }
@@ -336,17 +342,16 @@ function uploadChoices(writing: boolean, artist: Partial<Artist> | null | undefi
 }
 
 /**
- * The song's links: Spotify, YouTube or any web page, pasted in by an admin. YouTube and Spotify play on the page; every
- * link opens in a new tab. A pasted Drive link is attached as the Drive file it is, so it lands in Charts & recordings.
+ * Add link: a Spotify, YouTube or any web page, pasted in by an admin, as a Reference, Demo or Recording. YouTube and
+ * Spotify play on the page; every link opens in a new tab. A pasted Drive link is attached as the Drive file it is.
  */
-function SongLinks({ songId, links, m, admin }: { songId: string; links: FileRow[]; m: ReturnType<typeof useMusic>; admin: boolean }) {
+function AddLinkForm({ songId, onDone }: { songId: string; onDone(): void }) {
   const { call, error, busy } = useCommand();
-  const [adding, setAdding] = useState(false);
   const [url, setUrl] = useState("");
   const [title, setTitle] = useState("");
+  const [kind, setKind] = useState<FileKind>("reference");
   const [description, setDescription] = useState("");
   const [msg, setMsg] = useState("");
-  const close = () => { setAdding(false); setUrl(""); setTitle(""); setDescription(""); };
   async function add(e: React.FormEvent) {
     e.preventDefault();
     let u = url.trim();
@@ -354,33 +359,27 @@ function SongLinks({ songId, links, m, admin }: { songId: string; links: FileRow
     const driveFileId = driveIdFromUrl(u);
     // A blank name reads as where the link goes: "Spotify", "YouTube", "SoundCloud", or the site's own host.
     const name = title.trim() || linkName(u);
-    const r = await call<{ ids: string[]; skipped: number }>("files.attach", { songId, files: [driveFileId ? { driveFileId, ...(title.trim() ? { title: title.trim() } : {}) } : { url: u, title: name, ...(description.trim() ? { description: description.trim() } : {}) }] });
+    const r = await call<{ ids: string[]; skipped: number }>("files.attach", { songId, files: [driveFileId ? { driveFileId, ...(title.trim() ? { title: title.trim() } : {}) } : { url: u, title: name, kind, ...(description.trim() ? { description: description.trim() } : {}) }] });
     if (!r) return;
-    setMsg(r.skipped ? "That link is already on this song." : driveFileId ? "That's a Drive file: it's under Charts & recordings." : "");
-    close();
+    if (r.skipped) { setMsg("That link is already on this song."); return; }
+    onDone();
   }
   const valid = (() => { try { const u = new URL(/^https?:\/\//i.test(url.trim()) ? url.trim() : `https://${url.trim()}`); return u.hostname.includes("."); } catch { return false; } })();
   return (
-    <section className="sg-sec" aria-labelledby="song-links-h" data-testid="song-links">
-      <div className="sg-sech">
-        <h2 id="song-links-h" className="sg-lbl">Links</h2>
-        {admin && <button className="btn acc" onClick={() => (adding ? close() : setAdding(true))} data-testid="add-link">{adding ? "Cancel" : "+ Add link"}</button>}
+    <form className="card grid gap-2" onSubmit={add} data-testid="add-link-form">
+      <input className="input" inputMode="url" autoFocus placeholder="Paste a Spotify, YouTube or web link" aria-label="Link" value={url} onChange={(e) => setUrl(e.target.value)} data-testid="link-url" />
+      <div className="flex flex-wrap gap-2">
+        <input className="input min-w-0 flex-1" placeholder="Name (optional)" aria-label="Name" value={title} onChange={(e) => setTitle(e.target.value)} data-testid="link-title" />
+        <select className="select !w-auto" aria-label="Kind" value={kind} onChange={(e) => setKind(e.target.value as FileKind)} data-testid="link-kind">
+          {LINK_KINDS.map((k) => <option key={k} value={k}>{KIND_LABEL[k].replace(/s$/, "")}</option>)}
+        </select>
       </div>
-      {adding && (
-        <form className="card grid gap-2" onSubmit={add} data-testid="add-link-form">
-          <input className="input" inputMode="url" autoFocus placeholder="Paste a Spotify, YouTube or web link" aria-label="Link" value={url} onChange={(e) => setUrl(e.target.value)} data-testid="link-url" />
-          <input className="input" placeholder="Name (optional)" aria-label="Name" value={title} onChange={(e) => setTitle(e.target.value)} data-testid="link-title" />
-          <textarea className="input" rows={2} placeholder="Description (optional): a reference track, what to listen for…" aria-label="Description" value={description}
-            onChange={(e) => setDescription(e.target.value)} data-testid="link-description-new" />
-          <div><button className="btn acc" type="submit" disabled={busy || !valid} data-testid="link-save">Add</button></div>
-        </form>
-      )}
+      <textarea className="input" rows={2} placeholder="Description (optional): a reference track, what to listen for…" aria-label="Description" value={description}
+        onChange={(e) => setDescription(e.target.value)} data-testid="link-description-new" />
+      <div><button className="btn acc" type="submit" disabled={busy || !valid} data-testid="link-save">Add</button></div>
       {msg && <span className="s" data-testid="link-msg">{msg}</span>}
-      {links.length === 0
-        ? <div className="empty" data-testid="no-links"><span>No links yet.</span></div>
-        : <div className="sg-files" data-testid="links-list">{links.map((f) => <FileLine key={f.id} file={f} m={m} admin={admin} />)}</div>}
       <ErrorBox error={error} />
-    </section>
+    </form>
   );
 }
 
@@ -418,24 +417,21 @@ function ArchiveSongDialog({ song, m, onClose, onRetire }: { song: SongRow; m: R
   );
 }
 
-/** The releases this song is on: one link per track, to the track page. Admins only, like Releases itself. */
-function OnReleases({ songId }: { songId: string }) {
+/** The releases this song is on, as small links after the page's key · bpm · length: "Album · Track 3", one per track. Nothing when it's on none. */
+function ReleaseLinks({ songId, lead }: { songId: string; lead: boolean }) {
   const tracks = useCollection<ReleaseTrack>("tracks", { group: true, where: [["songId", "==", songId]] });
   const releases = useCollection<Release>("releases");
   const rows = (tracks.rows ?? []).flatMap((t) => {
     const a = releases.rows?.find((x) => x.id === t.releaseId);
     return a ? [{ t, a }] : [];
   }).sort((x, y) => (y.a.releaseDate ?? "").localeCompare(x.a.releaseDate ?? "") || x.a.title.localeCompare(y.a.title));
+  if (!rows.length) return null;
   return (
-    <section className="sg-sec" aria-labelledby="song-releases-h" data-testid="on-releases">
-      <h2 id="song-releases-h" className="sg-lbl">On releases</h2>
-      <div className="card">
-        {rows.length === 0
-          ? <span className="s">Not on a release yet.</span>
-          : rows.map(({ t, a }) => (
-            <Link key={t.id} href={trackHref(a.id, t.id)} className="font-semibold" data-testid={`on-release-${a.id}`}>{a.title} · Track {t.position}</Link>
-          ))}
-      </div>
-    </section>
+    <span data-testid="on-releases">
+      {lead && " · "}On{" "}
+      {rows.map(({ t, a }, i) => (
+        <span key={t.id}>{i > 0 && ", "}<Link href={trackHref(a.id, t.id)} className="underline" data-testid={`on-release-${a.id}`}>{a.title} · Track {t.position}</Link></span>
+      ))}
+    </span>
   );
 }

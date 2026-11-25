@@ -4,7 +4,7 @@ import { PrintOptions } from "@/schema/print";
 import { AppError } from "../errors";
 import { db } from "../db";
 import { roleIn } from "@/schema";
-import { calendarTours, setCalendarTours, setlistTransitions, setSetlistTransitions, dismissDayOf, dismissSetup, hiddenSections, printPrefs, setupDismissed, sectionOrder, setSectionHidden, setSectionOrder, setPrintPrefs } from "../prefs";
+import { calendarTours, setCalendarTours, setTheme, setlistTransitions, setSetlistTransitions, dismissDayOf, dismissSetup, hiddenSections, printPrefs, setupDismissed, sectionOrder, setSectionHidden, setSectionOrder, setPrintPrefs } from "../prefs";
 import type { Ctx } from "../ctx";
 import { defineCommand } from "./types";
 import { zoneOf } from "../zone";
@@ -84,6 +84,12 @@ export const calendarToursOn = defineCommand({
   async run(ctx) { return { on: await calendarTours(ctx.uid) }; },
 });
 
+export const themeSet = defineCommand({
+  name: "theme.set", roles: ["admin", "member"], input: z.strictObject({ theme: z.enum(["auto", "light", "dark"]) }),
+  description: "Set the caller's colour theme in the app: auto (follow the device's light or dark setting, the default), light or dark. Personal, and it follows them to every device.",
+  async run(ctx, i) { await setTheme(ctx.uid, i.theme); return { theme: i.theme }; },
+});
+
 export const dayOfDismiss = defineCommand({
   name: "dayOf.dismiss", roles: ["admin", "member"], input: z.strictObject({ kind: z.enum(["show", "rehearsal"]), id: z.string().min(1) }),
   description: "Hide the day-of banner (the bar above the nav on a show or rehearsal day) for one show or rehearsal, for the caller only. Personal: everyone else still sees it, and the next show or rehearsal still appears. Nothing about the show or rehearsal changes.",
@@ -97,4 +103,4 @@ export const dayOfDismiss = defineCommand({
   },
 });
 
-export const prefsCommands = [dayOfDismiss, calendarSetTours, calendarToursOn, artistsSetupStatus, artistsDismissSetup, sectionsSetHidden, sectionsHidden, sectionsSetOrder, sectionsOrder, setlistsPrintPrefs, setlistsSetPrintPrefs, setlistsSetShowTransitions, setlistsShowTransitions];
+export const prefsCommands = [themeSet, dayOfDismiss, calendarSetTours, calendarToursOn, artistsSetupStatus, artistsDismissSetup, sectionsSetHidden, sectionsHidden, sectionsSetOrder, sectionsOrder, setlistsPrintPrefs, setlistsSetPrintPrefs, setlistsSetShowTransitions, setlistsShowTransitions];

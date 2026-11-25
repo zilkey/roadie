@@ -7,6 +7,8 @@ export interface MenuItem {
   testid?: string;
   /** Disabled items stay visible; `hint` says why. */
   disabled?: boolean; hint?: string; danger?: boolean;
+  /** A small line under the label, always shown ("Last checked Oct 30"). */
+  sub?: string;
   /** Draw a divider above this item. */
   divider?: boolean;
   /** One of a set of choices (a song's status): the row is a menuitemradio, ticked when true. */
@@ -59,7 +61,7 @@ export function Menu({ label, testid, items, trigger, triggerClass }: { label: s
                 onClick={() => { if (it.disabled) return; setOpen(false); btn.current?.focus(); it.onSelect(); }}>
                 {it.checked !== undefined && <span aria-hidden className="w-4 text-center">{it.checked ? "✓" : ""}</span>}
                 {it.icon}
-                <span className="grid text-left"><span>{it.label}</span>{it.disabled && it.hint && <span className="s">{it.hint}</span>}</span>
+                <span className="grid text-left"><span>{it.label}</span>{it.sub && <span className="s" data-testid={`${it.testid ?? `${testid}-menu-${it.key}`}-sub`}>{it.sub}</span>}{it.disabled && it.hint && <span className="s">{it.hint}</span>}</span>
               </button>
             </div>
           ))}

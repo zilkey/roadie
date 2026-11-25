@@ -16,9 +16,10 @@ export const metadata: Metadata = {
 export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover", themeColor: "#3a46c4" };
 
 // No AuthProvider here: it pulls in the Firebase SDK, and the public fan pages (/f, /ask) must not load it. Routes that sign in live under src/app/(signed-in), whose layout holds the single AuthProvider.
+// suppressHydrationWarning: the signed-in pages' ThemeScript sets data-theme on <html> before React hydrates.
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body>
         <FontLoader />
         <Suspense fallback={null}><LoadingBar /></Suspense>
