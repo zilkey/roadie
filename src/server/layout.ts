@@ -1,6 +1,7 @@
 /**
  * Where artist data lives, and whether Roadie is taking writes (tenancy phase 10). Both come from `platform/config`:
- * - `nestedPaths: true`: artist records live under their artist (`artists/{id}/shows/{showId}`), not top level. Every path is built by
+ * - `nestedPaths` (on unless set to false): artist records live under their artist (`artists/{id}/shows/{showId}`), not top level. Since
+ *   the old top-level copies and their rules were deleted (2026-11-26) the browser can only read the nested layout. Every path is built by
  *   `pathOf` / `physicalPath` (src/schema/owners.ts), which read the flag this sets. The browser gets it with the session.
  * - `readOnly: true`: the short window while scripts/migrate-nested.ts copies the data. Every write is refused with READ_ONLY_MESSAGE
  *   (the Writer checks before it commits) and the app shows a banner.
@@ -23,7 +24,7 @@ export async function layout(): Promise<Layout> {
   if (!cached || now - cached.at > TTL_MS) {
     const envNested = envFlag("ROADIE_NESTED_PATHS"), envRo = envFlag("ROADIE_READ_ONLY");
     const d = envNested !== undefined && envRo !== undefined ? {} : (await firestore().doc("platform/config").get()).data() ?? {};
-    cached = { at: now, layout: { nestedPaths: envNested ?? d.nestedPaths === true, readOnly: envRo ?? d.readOnly === true } };
+    cached = { at: now, layout: { nestedPaths: envNested ?? d.nestedPaths !== false, readOnly: envRo ?? d.readOnly === true } };
   }
   setNestedPaths(cached.layout.nestedPaths);
   return cached.layout;

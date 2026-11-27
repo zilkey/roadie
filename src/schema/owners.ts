@@ -78,7 +78,7 @@ export const movesUnderArtist = (kind: string) => isArtistKind(kind) && !STAYS_T
  * (`artists/{artistId}/shows/{id}`). The server reads it from `platform/config.nestedPaths` (src/server/layout.ts); the browser gets it
  * with the session (src/lib/auth.tsx). `ROADIE_NESTED_PATHS=1|0` overrides it (tests, scripts).
  */
-let nested = typeof process !== "undefined" && process.env?.ROADIE_NESTED_PATHS === "1";
+let nested = !(typeof process !== "undefined" && process.env?.ROADIE_NESTED_PATHS === "0");
 export const nestedPaths = () => nested;
 export function setNestedPaths(on: boolean) { nested = on; }
 

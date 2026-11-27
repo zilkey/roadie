@@ -66,7 +66,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (refused(res.status)) throw new Error(json.error?.message ?? "Sign-in failed");
     if (!res.ok) throw new Unreachable();
     // Before any listener starts: every artist path is built for the layout the server is on.
-    setNestedPaths(json.nestedPaths === true);
+    setNestedPaths(json.nestedPaths !== false);
     try { await user.getIdToken(true); } catch { throw new Unreachable(); } // pick up the new custom claims
     if (json.status === "noBand") return { status: "noBand", user, email: json.email ?? user.email ?? "", name: json.name ?? "", invites: json.invites ?? [] };
     return { status: "ready", user, profile: json as Profile };

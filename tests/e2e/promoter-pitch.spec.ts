@@ -72,6 +72,9 @@ test.beforeAll(async ({ playwright }) => {
 
 test.afterAll(async () => {
   if (made.campaign) await api.post(`${APP}/api/commands/campaigns.close`, { data: { id: made.campaign }, headers: { authorization: `Bearer ${token}`, "x-artist-id": artistId } });
+  // The shows are upcoming and shared: left behind, they'd sit in every venue's calendar that a later spec in this shard counts
+  // (venue-calendars.spec.ts lists exactly the Bluebird Room's three).
+  for (const ev of made.events) await api.delete(`http://${FIRESTORE}/v1/projects/demo-band-tracker/databases/(default)/documents/venueEvents/${ev}`, { headers: { authorization: "Bearer owner" } });
   await api.dispose();
 });
 

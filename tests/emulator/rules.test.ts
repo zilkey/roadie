@@ -1,13 +1,26 @@
 import { test, before, after } from "node:test";
 import { readFileSync } from "node:fs";
 import { initializeTestEnvironment, assertFails, assertSucceeds, type RulesTestEnvironment } from "@firebase/rules-unit-testing";
-import { collection, collectionGroup, doc, getDoc, getDocs, query, setDoc, updateDoc, deleteDoc, where } from "firebase/firestore";
+import { collection as rawCollection, collectionGroup, doc as rawDoc, getDoc, getDocs, query, setDoc, updateDoc, deleteDoc, where } from "firebase/firestore";
+import { movesUnderArtist } from "@/schema/owners";
 
 let env: RulesTestEnvironment;
 /** The shared directory: records with no artist. */
 const SHARED = ["venues", "promoters", "festivals", "editions"];
 const NOTE_COLLS = ["festivalNotes", "editionNotes", "promoterNotes", "contactNotes"];
 const [host, port] = (process.env.FIRESTORE_EMULATOR_HOST ?? "127.0.0.1:8280").split(":");
+
+// Paths are written as the code names them ("shows/x", "pitches/y/comments/c1"). Artist records live under their artist
+// (`artists/{a}/shows/x`, tenancy phase 10), so `doc` and `collection` here put them there: artist y's records are the ids "y", "fy",
+// "cy" and "y__…", every other one is x's. A list names its artist by path (`collection(db, "fans", "y")`; x when left out).
+type Db = ReturnType<ReturnType<RulesTestEnvironment["authenticatedContext"]>["firestore"]>;
+const artistOfId = (id: string) => (id === "y" || id === "fy" || id === "cy" || id.startsWith("y__") ? "y" : "x");
+function at(path: string, a?: string) {
+  const s = path.split("/");
+  return movesUnderArtist(s[0]) ? `artists/${a ?? (s[1] ? artistOfId(s[1]) : "x")}/${path}` : path;
+}
+const doc = (db: Db, ...segs: string[]) => rawDoc(db, at(segs.join("/")));
+const collection = (db: Db, path: string, a?: string) => rawCollection(db, at(path, a));
 
 before(async () => {
   env = await initializeTestEnvironment({
@@ -127,10 +140,11 @@ test("members read the band collections but not booking, deals, money, users", a
   await assertSucceeds(getDoc(doc(hugo(), "shows/x/comments/band"))); // the band's own comments
   await assertFails(getDoc(doc(hugo(), "shows/x/comments/bandGone")));
   await assertSucceeds(getDocs(query(collection(hugo(), "shows/x/comments"), where("artistId", "==", "x"), where("audience", "==", "band"), where("deletedAt", "==", null))));
-  await assertFails(getDocs(query(collection(hugo(), "shows/x/comments"), where("audience", "==", "band"), where("deletedAt", "==", null)))); // no artist
+  await assertSucceeds(getDocs(query(collection(hugo(), "shows/x/comments"), where("audience", "==", "band"), where("deletedAt", "==", null)))); // the path names the artist
   await assertFails(getDocs(collection(hugo(), "shows/x/comments")));
   await assertSucceeds(getDocs(query(collection(hugo(), "songs"), where("artistId", "==", "x"), where("deletedAt", "==", null))));
-  await assertFails(getDocs(query(collection(hugo(), "songs"), where("deletedAt", "==", null)))); // every list names its artist
+  await assertSucceeds(getDocs(query(collection(hugo(), "songs"), where("deletedAt", "==", null)))); // the path names the artist
+  await assertFails(getDocs(query(collection(hugo(), "songs", "y"), where("deletedAt", "==", null)))); // never another artist's
 });
 
 test("members cannot read soft-deleted shared docs", async () => {
@@ -283,13 +297,14 @@ test("fuelPrices: any signed-in user reads; routeCache nobody; no client writes"
 
 // ---------- venues: a shared directory plus private per-band notes ----------
 
-test("checklist templates: only that artist's admins read them; lists filter by artistId", async () => {
+test("checklist templates: only that artist's admins read them; lists stay in that artist", async () => {
   await assertSucceeds(getDoc(doc(admin(), "checklistTemplates/x")));
   await assertFails(getDoc(doc(admin(), "checklistTemplates/y")));
   await assertFails(getDoc(doc(hugo(), "checklistTemplates/x")));
   await assertSucceeds(getDoc(doc(otherAdmin(), "checklistTemplates/y")));
   await assertSucceeds(getDocs(query(collection(admin(), "checklistTemplates"), where("artistId", "==", "x"))));
-  await assertFails(getDocs(collection(admin(), "checklistTemplates")));
+  await assertSucceeds(getDocs(collection(admin(), "checklistTemplates"))); // the path names the artist
+  await assertFails(getDocs(collection(admin(), "checklistTemplates", "y")));
 });
 
 test("fans: only that artist's admins read them; a member, another artist's admin and the geocode cache are closed; no client writes", async () => {
@@ -299,7 +314,8 @@ test("fans: only that artist's admins read them; a member, another artist's admi
   await assertFails(getDoc(doc(otherAdmin(), "fans/fx")));
   await assertSucceeds(getDoc(doc(otherAdmin(), "fans/fy")));
   await assertSucceeds(getDocs(query(collection(admin(), "fans"), where("artistId", "==", "x"))));
-  await assertFails(getDocs(collection(admin(), "fans")));
+  await assertSucceeds(getDocs(collection(admin(), "fans"))); // the path names the artist
+  await assertFails(getDocs(collection(admin(), "fans", "y")));
   for (const who of [admin(), hugo(), anon()]) await assertFails(getDoc(doc(who, "geocodes/g1")));
   for (const who of [admin(), hugo(), anon()]) await assertFails(setDoc(doc(who, "fans/new"), { artistId: "x" }));
 });
@@ -328,10 +344,11 @@ test("acts: a member reads the shared record; actNotes stay with that artist's a
   await assertFails(getDoc(doc(anon(), "actNotes/x__ax")));
 });
 
-test("actNotes lists must filter by artistId; acts and actNotes cannot be written from the client", async () => {
-  await assertFails(getDocs(collection(admin(), "actNotes")));
+test("actNotes lists stay in that artist; acts and actNotes cannot be written from the client", async () => {
+  await assertSucceeds(getDocs(collection(admin(), "actNotes"))); // the path names the artist
+  await assertFails(getDocs(collection(admin(), "actNotes", "y")));
   await assertSucceeds(getDocs(query(collection(admin(), "actNotes"), where("artistId", "==", "x"))));
-  await assertFails(getDocs(query(collection(admin(), "actNotes"), where("artistId", "==", "y"))));
+  await assertFails(getDocs(query(collection(admin(), "actNotes", "y"), where("artistId", "==", "y"))));
   await assertFails(getDocs(query(collection(hugo(), "actNotes"), where("artistId", "==", "x"))));
   await assertSucceeds(getDocs(collection(hugo(), "acts")));
   for (const who of [admin(), hugo()]) {
@@ -362,11 +379,12 @@ test("venues: a member cannot read a soft-deleted one, an admin can; archived no
   await assertFails(getDoc(doc(otherAdmin(), "venueNotes/x__gone")));
 });
 
-test("venueNotes lists must filter by artistId: unfiltered fails, the artist's own passes", async () => {
+test("venueNotes lists stay in that artist: the artist's own passes, another's fails", async () => {
   await assertFails(getDocs(collection(hugo(), "venueNotes")));
-  await assertFails(getDocs(collection(admin(), "venueNotes")));
+  await assertSucceeds(getDocs(collection(admin(), "venueNotes"))); // the path names the artist
+  await assertFails(getDocs(collection(admin(), "venueNotes", "y")));
   await assertSucceeds(getDocs(query(collection(admin(), "venueNotes"), where("artistId", "==", "x"))));
-  await assertFails(getDocs(query(collection(admin(), "venueNotes"), where("artistId", "==", "y"))));
+  await assertFails(getDocs(query(collection(admin(), "venueNotes", "y"), where("artistId", "==", "y"))));
   await assertFails(getDocs(query(collection(hugo(), "venueNotes"), where("artistId", "==", "x"))));
   await assertSucceeds(getDocs(query(collection(hugo(), "venues"), where("deletedAt", "==", null)))); // the directory lists for members
 });
@@ -393,7 +411,7 @@ test("pitches: only that artist's admins read a pitch, its comments and its acti
   await assertFails(getDoc(doc(mia, "pitches/x"))); // the per-artist role decides, not the best role
 });
 
-test("contacts: one band's own, read only by that artist's admins (per-artist role); lists filter by artistId; no client writes", async () => {
+test("contacts: one band's own, read only by that artist's admins (per-artist role); lists stay in that artist; no client writes", async () => {
   await assertSucceeds(getDoc(doc(admin(), "contacts/x")));
   await assertFails(getDoc(doc(admin(), "contacts/y")));
   await assertSucceeds(getDoc(doc(otherAdmin(), "contacts/y")));
@@ -401,24 +419,27 @@ test("contacts: one band's own, read only by that artist's admins (per-artist ro
   await assertFails(getDoc(doc(hugo(), "contacts/x")));
   const mia = as("mia", { x: "member", y: "admin" });
   await assertFails(getDoc(doc(mia, "contacts/x"))); // admin of y does not make her an admin of x
-  await assertFails(getDocs(collection(admin(), "contacts")));
+  await assertSucceeds(getDocs(collection(admin(), "contacts"))); // the path names the artist
+  await assertFails(getDocs(collection(admin(), "contacts", "y")));
   await assertSucceeds(getDocs(query(collection(admin(), "contacts"), where("artistId", "==", "x"))));
-  await assertFails(getDocs(query(collection(admin(), "contacts"), where("artistId", "==", "y"))));
+  await assertFails(getDocs(query(collection(admin(), "contacts", "y"), where("artistId", "==", "y"))));
   await assertFails(setDoc(doc(admin(), "contacts/new"), { artistId: "x", name: "Nope" }));
 });
 
-test("pitches: lists must filter by artistId", async () => {
-  await assertFails(getDocs(collection(admin(), "pitches")));
+test("pitches: lists stay in that artist", async () => {
+  await assertSucceeds(getDocs(collection(admin(), "pitches"))); // the path names the artist
+  await assertFails(getDocs(collection(admin(), "pitches", "y")));
   await assertSucceeds(getDocs(query(collection(admin(), "pitches"), where("artistId", "==", "x"))));
-  await assertFails(getDocs(query(collection(admin(), "pitches"), where("artistId", "==", "y"))));
+  await assertFails(getDocs(query(collection(admin(), "pitches", "y"), where("artistId", "==", "y"))));
   await assertSucceeds(getDocs(query(collection(admin(), "pitches/x/comments"), where("artistId", "==", "x"))));
-  await assertFails(getDocs(collection(admin(), "pitches/x/comments"))); // a comment carries its own artistId
+  await assertSucceeds(getDocs(collection(admin(), "pitches/x/comments"))); // the path names the artist
+  await assertFails(getDocs(collection(admin(), "pitches/x/comments", "y"))); // never under another artist
   await assertFails(getDocs(query(collection(otherAdmin(), "pitches/x/comments"), where("artistId", "==", "x"))));
 });
 
 // ---------- booking campaigns (#82) ----------
 
-test("campaigns: only that artist's admins read; lists filter by artistId; no client writes", async () => {
+test("campaigns: only that artist's admins read; lists stay in that artist; no client writes", async () => {
   await assertSucceeds(getDoc(doc(admin(), "campaigns/cx")));
   await assertFails(getDoc(doc(admin(), "campaigns/cy")));
   await assertSucceeds(getDoc(doc(otherAdmin(), "campaigns/cy")));
@@ -427,7 +448,8 @@ test("campaigns: only that artist's admins read; lists filter by artistId; no cl
   await assertFails(getDoc(doc(anon(), "campaigns/cx")));
   const mia = as("mia", { x: "member", y: "admin" });
   await assertFails(getDoc(doc(mia, "campaigns/cx"))); // the per-artist role decides
-  await assertFails(getDocs(collection(admin(), "campaigns")));
+  await assertSucceeds(getDocs(collection(admin(), "campaigns"))); // the path names the artist
+  await assertFails(getDocs(collection(admin(), "campaigns", "y")));
   await assertSucceeds(getDocs(query(collection(admin(), "campaigns"), where("artistId", "==", "x"))));
   await assertFails(setDoc(doc(admin(), "campaigns/new"), { artistId: "x", name: "Nope", status: "active" }));
   await assertFails(updateDoc(doc(admin(), "campaigns/cx"), { status: "closed" }));
@@ -455,11 +477,12 @@ test("festival, edition, promoter and contact notes: the per-artist role decides
   }
 });
 
-test("festival, edition, promoter and contact notes: lists must filter by artistId", async () => {
+test("festival, edition, promoter and contact notes: lists stay in that artist", async () => {
   for (const c of NOTE_COLLS) {
-    await assertFails(getDocs(collection(admin(), c)));
+    await assertSucceeds(getDocs(collection(admin(), c))); // the path names the artist
+    await assertFails(getDocs(collection(admin(), c, "y")));
     await assertSucceeds(getDocs(query(collection(admin(), c), where("artistId", "==", "x"))));
-    await assertFails(getDocs(query(collection(admin(), c), where("artistId", "==", "y"))));
+    await assertFails(getDocs(query(collection(admin(), c, "y"), where("artistId", "==", "y"))));
     await assertFails(getDocs(query(collection(hugo(), c), where("artistId", "==", "x"))));
   }
 });
@@ -519,7 +542,7 @@ test("history: collection-group queries must filter by artist; the other artist'
   await assertFails(group(admin(), ["runId", "==", "r1"])); // a run lookup alone no longer passes: the page adds the artist filter
 });
 
-test("emailThreads: only that artist's admins read them, lists must filter by artistId, no client writes", async () => {
+test("emailThreads: only that artist's admins read them, lists stay in that artist, no client writes", async () => {
   await env.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), "emailThreads/x__t1"), { deletedAt: null, artistId: "x", threadId: "t1" });
     await setDoc(doc(ctx.firestore(), "emailThreads/y__t1"), { deletedAt: null, artistId: "y", threadId: "t1" });
@@ -529,7 +552,8 @@ test("emailThreads: only that artist's admins read them, lists must filter by ar
   await assertSucceeds(getDoc(doc(otherAdmin(), "emailThreads/y__t1")));
   await assertFails(getDoc(doc(hugo(), "emailThreads/x__t1")));
   for (const who of [anon(), noRole(), aiLogin(), legacyAdmin()]) await assertFails(getDoc(doc(who, "emailThreads/x__t1")));
-  await assertFails(getDocs(collection(admin(), "emailThreads")));
+  await assertSucceeds(getDocs(collection(admin(), "emailThreads"))); // the path names the artist
+  await assertFails(getDocs(collection(admin(), "emailThreads", "y")));
   await assertSucceeds(getDocs(query(collection(admin(), "emailThreads"), where("artistId", "==", "x"))));
   await assertFails(getDocs(query(collection(hugo(), "emailThreads"), where("artistId", "==", "x"))));
   await assertFails(setDoc(doc(admin(), "emailThreads/x__new"), { artistId: "x" }));

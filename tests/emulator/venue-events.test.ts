@@ -513,8 +513,8 @@ describe("firestore rules", () => {
       const d = c.firestore();
       await setDoc(doc(d, "venueEvents/v1__e1"), { venueId: "v1", title: "Tin Cup Jane", date: "2026-11-20", status: "onsale" });
       await setDoc(doc(d, "venueEventSources/v1"), { venueId: "v1", type: "selectors", lastRunAt: "2026-11-10T18:00:00Z" });
-      await setDoc(doc(d, "venueEventNotes/x__v1__e1"), { artistId: "x", venueId: "v1", eventId: "v1__e1", take: "interested", deletedAt: null });
-      await setDoc(doc(d, "venueEventNotes/y__v1__e1"), { artistId: "y", venueId: "v1", eventId: "v1__e1", take: "notFit", deletedAt: null });
+      await setDoc(doc(d, "artists/x/venueEventNotes/x__v1__e1"), { artistId: "x", venueId: "v1", eventId: "v1__e1", take: "interested", deletedAt: null });
+      await setDoc(doc(d, "artists/y/venueEventNotes/y__v1__e1"), { artistId: "y", venueId: "v1", eventId: "v1__e1", take: "notFit", deletedAt: null });
     });
   });
   after(async () => { await env.cleanup(); });
@@ -538,21 +538,22 @@ describe("firestore rules", () => {
     }
   });
   test("only that artist's admin reads venueEventNotes", async () => {
-    await assertSucceeds(getDoc(doc(adminX(), "venueEventNotes/x__v1__e1")));
-    await assertFails(getDoc(doc(adminY(), "venueEventNotes/x__v1__e1")));
-    await assertFails(getDoc(doc(memberX(), "venueEventNotes/x__v1__e1")));
-    await assertFails(getDoc(doc(noBand(), "venueEventNotes/x__v1__e1")));
-    await assertFails(getDoc(doc(anon(), "venueEventNotes/x__v1__e1")));
-    await assertSucceeds(getDoc(doc(adminY(), "venueEventNotes/y__v1__e1")));
+    await assertSucceeds(getDoc(doc(adminX(), "artists/x/venueEventNotes/x__v1__e1")));
+    await assertFails(getDoc(doc(adminY(), "artists/x/venueEventNotes/x__v1__e1")));
+    await assertFails(getDoc(doc(memberX(), "artists/x/venueEventNotes/x__v1__e1")));
+    await assertFails(getDoc(doc(noBand(), "artists/x/venueEventNotes/x__v1__e1")));
+    await assertFails(getDoc(doc(anon(), "artists/x/venueEventNotes/x__v1__e1")));
+    await assertSucceeds(getDoc(doc(adminY(), "artists/y/venueEventNotes/y__v1__e1")));
   });
-  test("note lists must filter by artistId", async () => {
-    await assertSucceeds(getDocs(query(collection(adminX(), "venueEventNotes"), where("artistId", "==", "x"))));
-    await assertFails(getDocs(query(collection(adminX(), "venueEventNotes"), where("artistId", "==", "y"))));
-    await assertFails(getDocs(collection(adminX(), "venueEventNotes")));
-    await assertFails(getDocs(query(collection(memberX(), "venueEventNotes"), where("artistId", "==", "x"))));
+  // Notes live under their artist (artists/{a}/venueEventNotes, tenancy phase 10): the path names the artist.
+  test("note lists stay in that artist", async () => {
+    await assertSucceeds(getDocs(query(collection(adminX(), "artists/x/venueEventNotes"), where("artistId", "==", "x"))));
+    await assertSucceeds(getDocs(collection(adminX(), "artists/x/venueEventNotes")));
+    await assertFails(getDocs(collection(adminX(), "artists/y/venueEventNotes")));
+    await assertFails(getDocs(query(collection(memberX(), "artists/x/venueEventNotes"), where("artistId", "==", "x"))));
   });
   test("nothing here is writable from the client", async () => {
-    for (const p of ["venueEvents/v1__new", "venueEvents/v1__e1", "venueEventSources/v1", "venueEventNotes/x__new", "venueEventNotes/x__v1__e1"]) {
+    for (const p of ["venueEvents/v1__new", "venueEvents/v1__e1", "venueEventSources/v1", "artists/x/venueEventNotes/x__new", "artists/x/venueEventNotes/x__v1__e1"]) {
       await assertFails(setDoc(doc(adminX(), p), { artistId: "x", title: "hack" }));
     }
   });

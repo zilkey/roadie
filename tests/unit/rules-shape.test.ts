@@ -1,6 +1,7 @@
 /**
  * The shape of firestore.rules (tenancy plan D6), checked without an emulator:
- * - every `match` of the rules D6 replaced still has a counterpart, so no collection the browser read before is silently closed;
+ * - every `match` of the rules D6 replaced still has a counterpart (under `artists/{a}` for the kinds phase 10 moved there), so no
+ *   collection the browser read before is silently closed;
  * - a collection-group wildcard (`{path=**}`) is used only for tracks and history (rules OR together, so a wildcard `comments`
  *   match would widen pitch comments to whoever reads show comments);
  * - the old global helpers (`isAdmin()`, `isMember()`, `band()`) and the single `musicianId` claim are gone: every check is per artist;
@@ -48,12 +49,13 @@ const OLD = [
 
 test("the parser finds the rules' matches", () => {
   const found = matches(rules);
-  assert.ok(found.includes("shows/comments") && found.includes("**/history") && found.includes("assistantThreads/messages"), found.join(", "));
+  assert.ok(found.includes("artists/shows/comments") && found.includes("**/history") && found.includes("assistantThreads/messages"), found.join(", "));
 });
 
 test("every match of the replaced rules has a counterpart", () => {
   const found = new Set(matches(rules));
-  assert.deepEqual(OLD.filter((m) => !found.has(m)), []);
+  const now = (m: string) => (movesUnderArtist(m.split("/")[0]) ? `artists/${m}` : m);
+  assert.deepEqual(OLD.map(now).filter((m) => !found.has(m)), []);
 });
 
 test("collection-group wildcards only for tracks and history", () => {
@@ -75,15 +77,14 @@ test("every artist kind's rule checks a role in an artist", () => {
   }
 });
 
-test("phase 10: every artist kind that moves has a path-based rule under artists/{a}, and the ones that stay top level don't", () => {
+test("phase 10: artist kinds that moved have rules only under artists/{a}; the ones that stay top level have none there", () => {
   const found = new Set(matches(rules));
   const moving = Object.keys(OWNERS).filter(movesUnderArtist);
-  // Kinds the browser never reads have no rule in either layout (server only).
-  const readByBrowser = moving.filter((k) => found.has(k));
-  assert.deepEqual(readByBrowser.filter((k) => !found.has(`artists/${k}`)), []);
+  // The old top-level copies are gone (scripts/delete-flat-copies.ts), and so are their rules.
+  assert.deepEqual(moving.filter((k) => found.has(k)), []);
   for (const sub of ["shows/comments", "tours/entries", "pitches/comments", "pitches/activity", "releases/tracks"]) assert.ok(found.has(`artists/${sub}`), sub);
   for (const top of ["mcpTokens", "assistantThreads", "invites", "shortcutTokens"]) assert.ok(!found.has(`artists/${top}`), top);
   // Nested rules check the role in the artist the path names ({a}), never the record's own field.
-  const nested = rules.slice(rules.indexOf("match /artists/{a}"), rules.indexOf("match /socialChecklists/{id}  { allow read: if admin(id)"));
+  const nested = rules.slice(rules.indexOf("match /artists/{a}"), rules.indexOf("match /{path=**}/tracks/{t}"));
   assert.doesNotMatch(nested, /\bA\(\)/);
 });

@@ -185,8 +185,8 @@ sites/{artistId}                     artist kind, server-written: {artistId, nam
 siteDomains/{host}                   server kind: {artistId, role: live|www|staging}
 ```
 
-- **One site per artist for now.** Its id is the artist's id, so it's unique in both the nested and the flat layout
-  (e2e still runs flat with `ROADIE_NESTED_PATHS=0`). A second site per artist would get a new id scheme later. The `sites` doc carries
+- **One site per artist for now.** Its id is the artist's id, so it's unique under its artist (and was in the old flat
+  layout too). A second site per artist would get a new id scheme later. The `sites` doc carries
   `artistId` like every artist record, because the Writer finds a sub-collection's artist from its parent doc.
 - **Creating a site** is `scripts/sites-create.ts --artist <id> [--dry-run]` until phase 6 puts it in Settings. It
   creates the two Hosting sites, the `sites/{artistId}` doc (`nextN: 1`, `autoRefresh: true`) and any seed pages.

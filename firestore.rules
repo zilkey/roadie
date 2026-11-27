@@ -10,9 +10,8 @@ rules_version = '2';
 // must therefore filter `artistId == <artist>` (the browser hooks add it, src/lib/client-scope.ts); an unfiltered list is refused.
 // A collection-group wildcard ({path=**}) is used only for tracks and history (tests/unit/rules-shape.test.ts): rules OR together, so
 // a wildcard `comments` match would widen pitch comments.
-// Tenancy phase 10 moves artist records under their artist (`artists/{a}/shows/{id}`, platform/config.nestedPaths). Both layouts have
-// rules here, so the browser works before, during and after the move; the top-level artist matches go once the old copies are deleted
-// (scripts/delete-flat-copies.ts).
+// Tenancy phase 10 moved artist records under their artist (`artists/{a}/shows/{id}`); the old top-level copies and their rules are
+// gone (scripts/delete-flat-copies.ts, 2026-11-26).
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn()    { return request.auth != null; }
@@ -30,10 +29,8 @@ service cloud.firestore {
     function me()          { return request.auth.uid; }
     function myMusician(a) { return request.auth.token.get('musicians', {}).get(a, ''); }
     function A()           { return resource.data.artistId; }
-    // A get of a doc that doesn't exist (a show with no deal yet, an id of "none") reads as "doesn't exist" instead of failing on
-    // resource.data, for anyone with a role in an artist. It only reveals that an id is unused, and ids are random.
-    function missing()     { return anyRole() && resource == null; }
-    // The same, for a doc under artists/{a}/… (phase 10): anyone with a role in that artist.
+    // A get of a doc under artists/{a}/… that doesn't exist (a show with no deal yet, an id of "none") reads as "doesn't exist"
+    // instead of failing on resource.data, for anyone with a role in that artist. It only reveals that an id is unused, and ids are random.
     function missingIn(a)  { return roleIn(a) != '' && resource == null; }
 
     // ---------- People ----------
@@ -133,81 +130,12 @@ service cloud.firestore {
       }
       // Not here (they stay top level, still with artistId): mcpTokens, shortcutTokens, invites, assistantThreads.
     }
-    match /socialChecklists/{id}  { allow read: if admin(id); }
 
-    // ---------- Artist: the whole artist reads ----------
-    match /shows/{id} {
-      allow get: if missing() || inArtist(A());
-      allow list: if inArtist(A());
-      // The band's own comments (audience "band") are read by members; ones carried over from the pitch have no audience: admins only.
-      match /comments/{cid} { allow read: if admin(A()) || (member(A()) && live() && resource.data.get('audience', '') == 'band'); }
-    }
-    match /tours/{id} {
-      allow get: if missing() || inArtist(A());
-      allow list: if inArtist(A());
-      // Members read only the entries with visibility "band" (options, the pitches, are "admins"); their queries filter on it.
-      match /entries/{eid} { allow read: if admin(A()) || (member(A()) && live() && resource.data.get('visibility', '') == 'band'); }
-    }
-    match /projects/{id}          { allow get: if missing() || inArtist(A()); allow list: if inArtist(A()); }
-    match /songs/{id}             { allow get: if missing() || inArtist(A()); allow list: if inArtist(A()); }
-    match /files/{id}             { allow get: if missing() || inArtist(A()); allow list: if inArtist(A()); }
-    match /setlists/{id}          { allow get: if missing() || inArtist(A()); allow list: if inArtist(A()); }
-    match /setlistTemplates/{id}  { allow get: if missing() || inArtist(A()); allow list: if inArtist(A()); }
-    match /rehearsals/{id}        { allow get: if missing() || inArtist(A()); allow list: if inArtist(A()); }
-    match /stagePlots/{id}        { allow get: if missing() || inArtist(A()); allow list: if inArtist(A()); }
-    match /musicians/{id}         { allow get: if missing() || inArtist(A()); allow list: if inArtist(A()); }
-
-    // ---------- Artist: members see only their own ----------
-    // Expenses a member logged; member lists filter userId == <me>.
-    match /expenses/{id} {
-      allow get: if missing() || admin(A()) || (member(A()) && live() && resource.data.userId == me());
-      allow list: if admin(A()) || (member(A()) && live() && resource.data.userId == me());
-    }
-    // Availability asks naming the member's musician in that artist (the musicians claim); lists filter askedMusicianIds array-contains it.
-    match /availability/{id} {
-      allow get: if missing() || admin(A()) || (member(A()) && live() && myMusician(A()) != '' && myMusician(A()) in resource.data.get('askedMusicianIds', []));
-      allow list: if admin(A()) || (member(A()) && live() && myMusician(A()) != '' && myMusician(A()) in resource.data.get('askedMusicianIds', []));
-    }
-    // Payouts made to the member, as the signed-in user (to.userId) or as their musician in that artist (to.musicianId).
-    match /payouts/{id} {
-      allow get: if missing() || admin(A()) || (member(A()) && live()
-        && (resource.data.get('to', {}).get('userId', '') == me()
-            || (myMusician(A()) != '' && resource.data.get('to', {}).get('musicianId', '') == myMusician(A()))));
-      allow list: if admin(A()) || (member(A()) && live()
-        && (resource.data.get('to', {}).get('userId', '') == me()
-            || (myMusician(A()) != '' && resource.data.get('to', {}).get('musicianId', '') == myMusician(A()))));
-    }
-
-    // ---------- Artist: admins only ----------
-    match /income/{id}             { allow get: if missing() || admin(A()); allow list: if admin(A()); }
-    match /releases/{id}           { allow get: if missing() || admin(A()); allow list: if admin(A()); }
-    // Tracks are read under their release and across releases (the song page's "On releases" is a collection-group query).
+    // Release tracks are also read across releases (the song page's "On releases" is a collection-group query): by the track's artistId.
     match /{path=**}/tracks/{t}    { allow read: if admin(A()); }
-    match /showDeals/{id}          { allow get: if missing() || admin(A()); allow list: if admin(A()); }
-    match /emailTemplates/{id}     { allow get: if missing() || admin(A()); allow list: if admin(A()); }
-    match /statSnapshots/{id}      { allow get: if missing() || admin(A()); allow list: if admin(A()); }
+
+    // ---------- Artist kinds that stay top level (each still with artistId) ----------
     match /mcpTokens/{id}          { allow read: if admin(A()) && resource.data.userId == me(); }
-    match /contacts/{id}           { allow get: if missing() || admin(A()); allow list: if admin(A()); }
-    match /venueNotes/{id}         { allow get: if missing() || admin(A()); allow list: if admin(A()); }
-    match /venueEventNotes/{id}    { allow get: if missing() || admin(A()); allow list: if admin(A()); }
-    match /actNotes/{id}           { allow get: if missing() || admin(A()); allow list: if admin(A()); }
-    match /festivalNotes/{id}      { allow get: if missing() || admin(A()); allow list: if admin(A()); }
-    match /editionNotes/{id}       { allow get: if missing() || admin(A()); allow list: if admin(A()); }
-    match /promoterNotes/{id}      { allow get: if missing() || admin(A()); allow list: if admin(A()); }
-    match /contactNotes/{id}       { allow get: if missing() || admin(A()); allow list: if admin(A()); }
-    match /checklistTemplates/{id} { allow get: if missing() || admin(A()); allow list: if admin(A()); }
-    match /emailThreads/{id}       { allow get: if missing() || admin(A()); allow list: if admin(A()); }
-    match /posts/{id}              { allow get: if missing() || admin(A()); allow list: if admin(A()); }
-    match /todos/{id}              { allow get: if missing() || admin(A()); allow list: if admin(A()); }
-    match /fans/{id}               { allow get: if missing() || admin(A()); allow list: if admin(A()); }
-    match /campaigns/{id}          { allow get: if missing() || admin(A()); allow list: if admin(A()); }
-    match /pitches/{id} {
-      allow get: if missing() || admin(A());
-      allow list: if admin(A());
-      // A pitch's comments and activity carry the pitch's artistId themselves.
-      match /comments/{cid}  { allow read: if admin(A()); }
-      match /activity/{aid}  { allow read: if admin(A()); }
-    }
     // Roadie chat: only its owner, as an admin of the thread's artist.
     match /assistantThreads/{tid} {
       allow read: if admin(A()) && resource.data.ownerUid == me();

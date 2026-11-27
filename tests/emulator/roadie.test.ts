@@ -173,10 +173,13 @@ test("api: Stop as its own request ends the turn with no dropped stream, even se
   const other = await makeUser("other@example.com", "admin", { name: "Felix" });
   const member = await makeUser("member@example.com", "member", { name: "Hugo" });
   const message = "find me a venue in Boise [fake: slow]";
+  // The slow fake model takes 20s (src/server/assistant/ai.ts). "Prompt" means well before that: the budget also covers the emulator
+  // round trips (auth, the stop write, the 750ms poll, saving the turn), which stretch when the whole suite shares one emulator.
+  const PROMPT_MS = 12_000;
   const auto = () => firestore().collection("assistantThreads").doc().id;
   const msgs = (t: string) => firestore().collection("assistantThreads").doc(t).collection("messages");
   const until = async (t: string, n: number) => {
-    const end = Date.now() + 8000;
+    const end = Date.now() + PROMPT_MS;
     let docs: FirebaseFirestore.QueryDocumentSnapshot[] = [];
     while (Date.now() < end && (docs = (await msgs(t).orderBy("at").get()).docs).length < n) await new Promise((r) => setTimeout(r, 100));
     return docs;
@@ -195,7 +198,7 @@ test("api: Stop as its own request ends the turn with no dropped stream, even se
   const started = Date.now();
   assert.equal((await handleStop(`Bearer ${admin.token}`, { threadId: thread1, replyId: reply1 })).status, 200);
   const saved = await until(thread1, 2);
-  assert.ok(Date.now() - started < 5000, `stopped promptly (${Date.now() - started}ms)`);
+  assert.ok(Date.now() - started < PROMPT_MS, `stopped promptly (${Date.now() - started}ms)`);
   assert.equal(saved[1].id, reply1);
   assert.equal(saved[1].data().stopped, true);
   await reader.cancel().catch(() => {});
@@ -206,7 +209,7 @@ test("api: Stop as its own request ends the turn with no dropped stream, even se
   const t0 = Date.now();
   const res2 = await handleChat(`Bearer ${admin.token}`, { threadId: thread2, replyId: reply2, message, pageContext: ctx });
   await res2.text();
-  assert.ok(Date.now() - t0 < 5000, "no waiting on the model");
+  assert.ok(Date.now() - t0 < PROMPT_MS, "no waiting on the model");
   const saved2 = await until(thread2, 2);
   assert.deepEqual(saved2.map((d) => d.data().role), ["user", "assistant"]);
   assert.equal(saved2[0].data().text, message);

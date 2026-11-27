@@ -43,10 +43,13 @@ export function DrivePicker({ syncWith, exclude = [], defaultKind, kinds = KIND_
   const [mates, setMates] = useState<Mate[]>([]);
   const [sel, setSel] = useState<Record<string, { kind: FileKind; key: string }>>({});
   const searchSeq = useRef(0);
+  /** The pending title-follow search (below). Whatever the person types or searches themselves cancels it. */
+  const follow = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   // The text being searched right now (Drive takes a few seconds), or null when idle.
   const [searching, setSearching] = useState<string | null>(null);
 
   async function search(text: string) {
+    clearTimeout(follow.current);
     if (!text.trim()) { setHits(null); return; }
     const n = ++searchSeq.current;
     setSearching(text.trim());
@@ -64,6 +67,7 @@ export function DrivePicker({ syncWith, exclude = [], defaultKind, kinds = KIND_
     if (syncWith === undefined) return;
     setQ(syncWith);
     const t = setTimeout(() => { if (syncWith.trim().length >= 2) search(syncWith); else setHits(null); }, 450);
+    follow.current = t;
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [syncWith]);
@@ -103,7 +107,7 @@ export function DrivePicker({ syncWith, exclude = [], defaultKind, kinds = KIND_
       <div className="flex gap-2">
         <input className="input" placeholder={placeholder} value={q}
           // A pasted Drive link finds that file straight away, no Search press needed.
-          onChange={(e) => { setQ(e.target.value); if (driveIdFromUrl(e.target.value)) search(e.target.value); }} data-testid="drive-q" aria-label="Search Drive"
+          onChange={(e) => { clearTimeout(follow.current); setQ(e.target.value); if (driveIdFromUrl(e.target.value)) search(e.target.value); }} data-testid="drive-q" aria-label="Search Drive"
           onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); search(q); } }} />
         <button className="btn ghost" type="button" disabled={busy} onClick={() => search(q)} data-testid="drive-search">Search</button>
       </div>

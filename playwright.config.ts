@@ -29,6 +29,9 @@ export default defineConfig({
     viewport: { width: 1280, height: 900 },
     screenshot: "only-on-failure",
     trace: "retain-on-failure",
+    // Chromium's fake audio output: players still play and their clock still runs, without the machine's own audio service
+    // (a busy or stuck coreaudiod on a Mac left a rehearsal recording at 0:00 while "playing").
+    launchOptions: { args: ["--disable-audio-output"] },
   },
   webServer: [
     {
