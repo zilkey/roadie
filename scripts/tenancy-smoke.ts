@@ -154,8 +154,11 @@ function webConfig() {
 
 const SMOKE_UID = "tenancy-smoke";
 const NOBODY = "tenancy-smoke-no-such-artist";
-/** Artist kinds the browser never lists or gets with an artist filter: server-only, owner-only, or keyed by the artist id. */
-const NOT_LISTED = new Set(["invites", "shortcutTokens", "mcpTokens", "assistantThreads", "socialChecklists"]);
+/**
+ * Artist kinds the browser never lists or gets with an artist filter: server-only (invites, Shortcut tokens, the website, read and
+ * written through the site.* commands), owner-only, or keyed by the artist id.
+ */
+const NOT_LISTED = new Set(["invites", "shortcutTokens", "mcpTokens", "assistantThreads", "socialChecklists", "sites", "sitePages", "siteSources", "siteAssets", "siteVersions"]);
 /** Kinds every member reads (live). */
 const MEMBER_KINDS = ["shows", "tours", "projects", "songs", "files", "setlists", "setlistTemplates", "rehearsals", "stagePlots", "musicians"];
 
