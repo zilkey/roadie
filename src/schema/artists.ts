@@ -47,6 +47,8 @@ export const SongField = z.strictObject({
   setlistLabel: z.string().optional(),
   /** One line saying what the field holds ("Capo fret with the guitar tuned down a half step to Eb"): help text under the value, a tooltip on the column header, and read by Roadie. Missing = none, never an empty string. */
   description: z.string().optional(),
+  /** Show fields only: the value every show has unless it overrides it (Show.fields holds the overrides). Missing = none, never an empty string. */
+  defaultValue: z.string().optional(),
 });
 /** A custom field definition for shows is the same shape as one for songs. */
 export const ShowField = SongField;

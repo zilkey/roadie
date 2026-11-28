@@ -398,7 +398,7 @@ export const artistsUpdate = defineCommand({
 
 // ---------- custom fields (artist-defined label/value pairs on songs and on shows) ----------
 
-type FieldDef = { id: string; label: string; inTable?: boolean; inSetlists?: boolean; setlistLabel?: string; description?: string };
+type FieldDef = { id: string; label: string; inTable?: boolean; inSetlists?: boolean; setlistLabel?: string; description?: string; defaultValue?: string };
 type Kind = { noun: "song" | "show"; defs: "songFields" | "showFields"; coll: "songs" | "shows" };
 const SONG: Kind = { noun: "song", defs: "songFields", coll: "songs" };
 const SHOW: Kind = { noun: "show", defs: "showFields", coll: "shows" };
@@ -430,18 +430,20 @@ function fieldCommands(k: Kind) {
   });
   const update = defineCommand({
     name: `artists.update${N}Field`, roles: ["admin"],
-    description: `Rename a ${n} field and/or change its description (one line saying what the field holds; "" removes it)${n === "song" ? ' and/or its setlistLabel (a shorter name printed on setlists, "Capo" for "Capo (Eb)"; "" removes it)' : ""}. Give at least one; one left out stays as it is. ${N}s keep their values.`,
-    input: z.strictObject({ id: z.string().min(1), fieldId: z.string().min(1), label: labelIn.optional(), description: descriptionIn.optional(), ...(n === "song" ? { setlistLabel: z.string().trim().max(40).optional() } : {}) })
-      .refine((i) => i.label !== undefined || i.description !== undefined || (i as { setlistLabel?: string }).setlistLabel !== undefined, "Give a label, a description, or both"),
+    description: `Rename a ${n} field and/or change its description (one line saying what the field holds; "" removes it)${n === "song" ? ' and/or its setlistLabel (a shorter name printed on setlists, "Capo" for "Capo (Eb)"; "" removes it)' : ' and/or its defaultValue (the value every show has unless the show overrides it with shows.setFields; "" removes it)'}. Give at least one; one left out stays as it is. ${N}s keep their values.`,
+    input: z.strictObject({ id: z.string().min(1), fieldId: z.string().min(1), label: labelIn.optional(), description: descriptionIn.optional(), ...(n === "song" ? { setlistLabel: z.string().trim().max(40).optional() } : { defaultValue: z.string().trim().max(2000).optional() }) })
+      .refine((i) => i.label !== undefined || i.description !== undefined || (i as { setlistLabel?: string }).setlistLabel !== undefined || (i as { defaultValue?: string }).defaultValue !== undefined, "Give a label, a description, or both"),
     run: (ctx, i) => run(ctx, async (w) => {
       const fields = await fieldsOf(w, k, i.id);
       if (!fields.some((f) => f.id === i.fieldId)) throw new AppError("not_found", `No such ${n} field`, 404);
       const set = (f: FieldDef): FieldDef => {
-        const { description: _, setlistLabel: __, ...rest } = f;
+        const { description: _, setlistLabel: __, defaultValue: ___, ...rest } = f;
         const description = i.description === undefined ? f.description : i.description;
         const sl = (i as { setlistLabel?: string }).setlistLabel;
         const setlistLabel = sl === undefined ? f.setlistLabel : sl;
-        return { ...rest, label: i.label ?? f.label, ...(description ? { description } : {}), ...(setlistLabel ? { setlistLabel } : {}) };
+        const dv = (i as { defaultValue?: string }).defaultValue;
+        const defaultValue = dv === undefined ? f.defaultValue : dv;
+        return { ...rest, label: i.label ?? f.label, ...(description ? { description } : {}), ...(setlistLabel ? { setlistLabel } : {}), ...(defaultValue ? { defaultValue } : {}) };
       };
       return w.update("artists", i.id, { [k.defs]: fields.map((f) => (f.id === i.fieldId ? set(f) : f)) });
     }),

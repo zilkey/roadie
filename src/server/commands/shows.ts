@@ -486,18 +486,19 @@ export const showsAfter = defineCommand({
 
 export const showsSetFields = defineCommand({
   name: "shows.setFields", roles: ["admin"],
-  description: "Set a show's custom field values (the artist's showFields, defined with artists.addShowField): fields is the whole list of [{fieldId, value}], so read the show's fields and the artist's showFields (records.get artists) first and resend the values you keep. A field the artist lacks is added with artists.addShowField first. A blank value, or a field left out, means no value. Unknown field ids are refused.",
+  description: "Set a show's custom field values (the artist's showFields, defined with artists.addShowField): fields is the whole list of [{fieldId, value}], so read the show's fields and the artist's showFields (records.get artists) first and resend the values you keep. A field the artist lacks is added with artists.addShowField first. A blank value, or a field left out, means no value of the show's own: the show then has the field's defaultValue, if it has one. A value is this show's override of that default; one equal to the default isn't stored. Unknown field ids are refused.",
   input: z.strictObject({ id: z.string().min(1), fields: z.array(z.strictObject({ fieldId: z.string().min(1), value: z.string() })) }),
   run: (ctx, i) => run(ctx, async (w) => {
     const show = await bandShow(w, i.id);
-    const defs = ((await artistFor(w)).showFields ?? []) as { id: string }[];
+    const defs = ((await artistFor(w)).showFields ?? []) as { id: string; defaultValue?: string }[];
     const seen = new Set<string>();
     const fields = i.fields.flatMap((f) => {
       if (!defs.some((d) => d.id === f.fieldId)) throw new AppError("invalid_input", `No such show field "${f.fieldId}"`, 400);
       if (seen.has(f.fieldId)) throw new AppError("invalid_input", "Give each field once", 400);
       seen.add(f.fieldId);
       const value = f.value.trim();
-      return value ? [{ fieldId: f.fieldId, value }] : [];
+      // The same as the default is no override: the show follows the default if it changes later.
+      return value && value !== defs.find((d) => d.id === f.fieldId)?.defaultValue ? [{ fieldId: f.fieldId, value }] : [];
     });
     return w.update("shows", i.id, { fields });
   }),

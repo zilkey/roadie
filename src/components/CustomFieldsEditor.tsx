@@ -17,10 +17,11 @@ const Grip = () => (
 export type FieldKind = "song" | "show";
 const COPY = {
   song: { title: "Song fields", blurb: "Extra facts to note on each song, like Capo or Tuning. Define them here, fill them in on the song. Tick In setlists to offer one when printing a setlist.", eg: "Capo", plural: "songs", coll: "songs" },
-  show: { title: "Show fields", blurb: "Extra facts to note on each show, like Parking or Hotel. Define them here, fill them in on the show (admins only).", eg: "Parking", plural: "shows", coll: "shows" },
+  show: { title: "Show fields", blurb: "Extra facts to note on each show, like Parking or Hotel. Define them here, fill them in on the show (admins only). A Default is what every show has unless it overrides it on the show page.", eg: "Parking", plural: "shows", coll: "shows" },
 } as const;
 type Flag = "inTable" | "inSetlists";
 const SETLIST_LABEL_HINT = "A shorter name printed on setlists (blank prints the field name)";
+const DEFAULT_HINT = "The value every show has unless the show overrides it (blank: no default)";
 const SETLISTS_HINT = "Offered as an extra field when printing a setlist";
 const TABLE_HINT = {
   song: "A column in the Songs list",
@@ -65,6 +66,8 @@ export function CustomFieldsEditor({ artist, kind }: { artist: Artist; kind: Fie
   // An existing field's description is click-to-edit and saves on leaving it; blank removes it.
   const saveDescription = async (f: SongField, v: string) => !!(await call(`artists.update${Kind}Field`, { id: artist.id, fieldId: f.id, description: v.trim() }));
   // A song field's setlist label is click-to-edit too; blank removes it (the label prints).
+  // A show field's default is click-to-edit too; blank removes it (shows keep their own values).
+  const saveDefault = async (f: SongField, v: string) => !!(await call("artists.updateShowField", { id: artist.id, fieldId: f.id, defaultValue: v.trim() }));
   const saveSetlistLabel = async (f: SongField, v: string) => !!(await call("artists.updateSongField", { id: artist.id, fieldId: f.id, setlistLabel: v.trim() }));
   async function rename() {
     if (editId && (await call(`artists.update${Kind}Field`, { id: artist.id, fieldId: editId, label: name.trim() }))) setEditId(null);
@@ -108,7 +111,7 @@ export function CustomFieldsEditor({ artist, kind }: { artist: Artist; kind: Fie
       )}
       {fields.length === 0 ? <p className="s text-center" data-testid={`${kind}-fields-empty`}>No {kind} fields yet.</p> : (
         <div className="cfg-scroll"><table className="cfg-table">
-          <thead><tr><th className="act"><span className="sr-only">Reorder</span></th><th>Field</th><th>Description</th>{kind === "song" && <th title={SETLIST_LABEL_HINT}>Setlist label</th>}<th>{Kind}s with a value</th><th title={TABLE_HINT[kind]}>In table</th>{kind === "song" && <th title={SETLISTS_HINT}>In setlists</th>}<th className="act"><span className="sr-only">Actions</span></th></tr></thead>
+          <thead><tr><th className="act"><span className="sr-only">Reorder</span></th><th>Field</th><th>Description</th>{kind === "song" && <th title={SETLIST_LABEL_HINT}>Setlist label</th>}{kind === "show" && <th title={DEFAULT_HINT}>Default</th>}<th>{Kind}s with a value</th><th title={TABLE_HINT[kind]}>In table</th>{kind === "song" && <th title={SETLISTS_HINT}>In setlists</th>}<th className="act"><span className="sr-only">Actions</span></th></tr></thead>
           <tbody>{fields.map((f, i) => (
             <tr key={f.id} data-testid={`${kind}-field-${f.id}`} data-editing={editId === f.id ? "1" : undefined} {...dr.row(i)}>
               <td className="act"><span className="flex w-6 cursor-grab select-none justify-center text-muted" {...dr.handle(i)} aria-hidden="true"><Grip /></span></td>
@@ -117,6 +120,8 @@ export function CustomFieldsEditor({ artist, kind }: { artist: Artist; kind: Fie
                 onSave={(v) => saveDescription(f, v)} error={error} /></td>
               {kind === "song" && <td><InlineValue testid={`song-field-setlist-label-${f.id}`} label={`${f.label} setlist label`} kind="text" value={f.setlistLabel ?? ""} emptyLabel="Same as field" canEdit
                 onSave={(v) => saveSetlistLabel(f, v)} error={error} /></td>}
+              {kind === "show" && <td><InlineValue testid={`show-field-default-${f.id}`} label={`${f.label} default`} kind="text" value={f.defaultValue ?? ""} emptyLabel="No default" canEdit
+                onSave={(v) => saveDefault(f, v)} error={error} /></td>}
               <td>{usedOn(f)}</td>
               <td>
                 <input type="checkbox" className="h-4 w-4" aria-label={`Show ${f.label} in the ${Kind}s table`} title={TABLE_HINT[kind]} data-testid={`${kind}-field-in-table-${f.id}`}

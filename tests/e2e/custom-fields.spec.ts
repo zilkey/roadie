@@ -28,6 +28,7 @@ test("Custom fields: define a show field in admin, fill it on a show, see it; a 
   await page.getByTestId("new-show-field-add").click();
   const row = page.getByTestId("show-fields").getByRole("row", { name: new RegExp(label) });
   await expect(row).toBeVisible();
+  const fieldId = `custom-field-${(await row.getAttribute("data-testid"))!.replace("show-field-", "")}`;
   await expect(page.getByTestId("song-fields")).not.toContainText(label);
 
   // The field is on the show page's Custom fields card; fill it in.
@@ -41,12 +42,11 @@ test("Custom fields: define a show field in admin, fill it on a show, see it; a 
   await expect(card).toContainText(label);
   // No Edit: tap the value, type, Enter. A Saved tick confirms the write.
   await expect(card.getByTestId("show-edit")).toHaveCount(0);
-  const fieldId = await card.locator("[data-testid^=custom-field-]").first().getAttribute("data-testid");
-  await card.getByTestId(fieldId!).click();
+  await card.getByTestId(fieldId).click();
   await card.getByTestId(`${fieldId}-input`).fill("Lot B, behind the venue");
   await card.getByTestId(`${fieldId}-input`).press("Enter");
   await expect(card.getByTestId(`${fieldId}-saved`)).toBeVisible();
-  await expect(card.getByTestId(fieldId!)).toContainText("Lot B, behind the venue");
+  await expect(card.getByTestId(fieldId)).toContainText("Lot B, behind the venue");
 
   // It survives a reload.
   await page.reload();
@@ -59,6 +59,52 @@ test("Custom fields: define a show field in admin, fill it on a show, see it; a 
   await expect(hugo.page.getByTestId("custom-fields")).toHaveCount(0);
   await expect(hugo.page.getByTestId("show-edit")).toHaveCount(0);
   await hugo.close();
+});
+
+test("Custom fields: a show field's default is on every show; one show overrides it in a dialog and goes back", async ({ page }) => {
+  const label = `Green room ${Date.now()}`;
+  await signInAs(page, "rudy");
+  await page.goto(A("/admin/fields"));
+  await page.getByTestId("add-show-field").click();
+  await page.getByTestId("new-show-field-label").fill(label);
+  await page.getByTestId("new-show-field-add").click();
+  const row = page.getByTestId("show-fields").getByRole("row", { name: new RegExp(label) });
+  const fieldId = (await row.getAttribute("data-testid"))!.replace("show-field-", "");
+  await row.getByTestId(`show-field-default-${fieldId}`).click();
+  await row.getByTestId(`show-field-default-${fieldId}-input`).fill("Hummus, no beer");
+  await row.getByTestId(`show-field-default-${fieldId}-input`).press("Enter");
+  await expect(row.getByTestId(`show-field-default-${fieldId}-saved`)).toBeVisible();
+
+  // A new show has the default, marked Default.
+  await page.goto(A("/shows/new"));
+  await page.getByTestId("show-venue").selectOption({ label: "Deep End · Denver" });
+  await page.getByTestId("show-date").fill(day(211));
+  await page.getByTestId("deal-guarantee").fill("100");
+  await page.getByTestId("show-save").click();
+  await expect(page.getByTestId("show-page")).toBeVisible();
+  const card = page.getByTestId("custom-fields");
+  await expect(card.getByTestId(`custom-field-value-${fieldId}`)).toHaveText("Hummus, no beer");
+  await expect(card.getByTestId(`custom-field-state-${fieldId}`)).toHaveText("Default");
+
+  // Override opens a dialog showing the default; Save gives this show its own value.
+  await card.getByTestId(`custom-field-override-${fieldId}`).click();
+  const dlg = page.getByTestId("custom-field-override");
+  await expect(dlg.getByTestId("custom-field-override-default")).toHaveText("Hummus, no beer");
+  await expect(dlg.getByTestId("custom-field-override-save")).toBeDisabled();
+  await dlg.getByTestId("custom-field-override-value").fill("Pizza and IPA");
+  await dlg.getByTestId("custom-field-override-save").click();
+  await expect(dlg).toBeHidden();
+  await expect(card.getByTestId(`custom-field-value-${fieldId}`)).toHaveText("Pizza and IPA");
+  await expect(card.getByTestId(`custom-field-state-${fieldId}`)).toHaveText("Overridden");
+  await page.reload();
+  await expect(page.getByTestId(`custom-field-value-${fieldId}`)).toHaveText("Pizza and IPA");
+
+  // Change → Use default goes back.
+  await page.getByTestId(`custom-field-override-${fieldId}`).click();
+  await page.getByTestId("custom-field-override-reset").click();
+  await expect(page.getByTestId("custom-field-override")).toBeHidden();
+  await expect(page.getByTestId(`custom-field-value-${fieldId}`)).toHaveText("Hummus, no beer");
+  await expect(page.getByTestId(`custom-field-state-${fieldId}`)).toHaveText("Default");
 });
 
 test("Custom fields: a field ticked In table is a column in the Shows and Songs lists", async ({ page, browser }) => {

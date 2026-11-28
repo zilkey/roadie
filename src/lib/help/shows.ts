@@ -164,6 +164,7 @@ export const SHOW_TOPICS: HelpTopic[] = [
       "Custom fields are the band's own extra facts, each a label with a text value: Capo or Tuning on songs, Parking or Hotel on shows.",
       "Admins define them in Artist settings, \"Custom fields\": a \"Show fields\" card and a \"Song fields\" card. Use \"New field\" to add one, the pencil to rename, the bin to delete, and drag to reorder. The table counts how many records have a value for each.",
       "Values are filled in on the record. For songs, an admin taps the value under Details on the song page. For shows, it's the admin-only \"Custom fields\" card on Show Details: tap a value, type, and it saves in place when you leave it. A blank value isn't stored.",
+      "A show field can have a Default (the \"Default\" column on the \"Show fields\" card; tap it to set it, blank removes it). Every show then has that value, marked \"Default\" on its Custom fields card. To give one show something else, press \"Override\": a dialog shows the default, type this show's value and Save. That show's value is marked \"Overridden\"; \"Change\" opens the dialog again, and \"Use default\" there goes back to the default. Changing the default changes every show that hasn't overridden it, and the Shows table shows the same values.",
       "Deleting a field asks first, and removes its values from every show or song that has one.",
     ].join("\n\n"),
     related: ["songs", "showPage"],

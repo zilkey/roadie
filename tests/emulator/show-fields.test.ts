@@ -162,3 +162,27 @@ test("field descriptions: set on add or update, trimmed, blank removes, kept thr
   assert.deepEqual(((await artist()).songFields as unknown[])[0], { id: key, label: "Feel" });
   assert.equal((await call(admin, "artists.addSongField", { id: TEST_ARTIST, label: "Z", description: "x".repeat(301) })).status, 400);
 });
+
+test("show field defaults: set, trimmed, blank removes; a show's own value overrides it, one equal to the default isn't stored", async () => {
+  const { admin, member, call, show, field, artist } = await world();
+  const hotel = await field("Show", "Hotel"), capo = await field("Song", "Capo");
+  const s = await show("2027-05-01");
+  assert.equal((await call(member, "artists.updateShowField", { id: TEST_ARTIST, fieldId: hotel, defaultValue: "Motel 6" })).status, 403);
+  assert.equal((await call(admin, "artists.updateShowField", { id: TEST_ARTIST, fieldId: hotel, defaultValue: "  Motel 6 " })).status, 200, "a default alone is enough");
+  assert.deepEqual((await artist()).showFields, [{ id: hotel, label: "Hotel", defaultValue: "Motel 6" }]);
+  // song fields have no default
+  assert.equal((await call(admin, "artists.updateSongField", { id: TEST_ARTIST, fieldId: capo, defaultValue: "2" })).status, 400);
+  // a rename keeps it
+  await call(admin, "artists.updateShowField", { id: TEST_ARTIST, fieldId: hotel, label: "Lodging" });
+  assert.deepEqual((await artist()).showFields, [{ id: hotel, label: "Lodging", defaultValue: "Motel 6" }]);
+
+  await call(admin, "shows.setFields", { id: s, fields: [{ fieldId: hotel, value: "Motel 6" }] });
+  assert.deepEqual(await values(s), [], "the default's own value is no override");
+  await call(admin, "shows.setFields", { id: s, fields: [{ fieldId: hotel, value: "Marriott" }] });
+  assert.deepEqual(await values(s), [{ fieldId: hotel, value: "Marriott" }]);
+
+  // removing the default leaves the show's override alone
+  assert.equal((await call(admin, "artists.updateShowField", { id: TEST_ARTIST, fieldId: hotel, defaultValue: "" })).status, 200);
+  assert.deepEqual((await artist()).showFields, [{ id: hotel, label: "Lodging" }]);
+  assert.deepEqual(await values(s), [{ fieldId: hotel, value: "Marriott" }]);
+});

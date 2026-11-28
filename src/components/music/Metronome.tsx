@@ -11,6 +11,8 @@ const SAMPLES: Record<Drum, string> = { kick: "/sounds/metronome-kick.wav", hat:
 const GAIN: Record<Drum, number> = { kick: 0.9, hat: 0.55 };
 const LOOKAHEAD_S = 0.12;
 const TICK_MS = 25;
+/** How long the beat waits for the next page to show the same song's button before it stops. */
+const HANDOFF_MS = 2000;
 
 let ctx: AudioContext | null = null;
 let buffers: Promise<Record<Drum, AudioBuffer>> | null = null;
@@ -84,8 +86,9 @@ export function Metronome({ id, bpm, title }: { id: string; bpm: number | null |
     return () => {
       const left = (mounted.get(key) ?? 1) - 1;
       if (left > 0) mounted.set(key, left); else mounted.delete(key);
-      // Moving between two pages that both show this song's button keeps the beat; leaving them stops it.
-      setTimeout(() => { if (!mounted.has(key) && playing?.key === key) stopMetronome(); }, 400);
+      // Moving between two pages that both show this song's button keeps the beat; leaving them stops it. The next page
+      // may still be loading its data before it draws the button (a slow phone, a busy machine), so it gets a while.
+      setTimeout(() => { if (!mounted.has(key) && playing?.key === key) stopMetronome(); }, HANDOFF_MS);
     };
   }, [key, tempo]);
 

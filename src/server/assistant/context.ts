@@ -76,12 +76,16 @@ export async function pageRecord(ctx: Ctx, page: PageContext) {
   let record: Row;
   try { record = (await runAs(ctx, "records.get", { kind, id: page.recordId })).result as Row; } catch { return null; }
   const defs = FIELD_DEFS[kind];
-  let customFields: { fieldId: string; label: string; description?: string; value: string | null }[] | undefined;
+  let customFields: { fieldId: string; label: string; description?: string; value: string | null; defaultValue?: string; isDefault?: boolean }[] | undefined;
   if (defs) {
     const artists = await list(ctx, "artists");
     const a = artists.find((x) => x.id === ctx.artistId) ?? artists[0]; // records.list is already limited to the current artist
     const values = new Map(((record.fields ?? []) as { fieldId: string; value: string }[]).map((f) => [f.fieldId, f.value]));
-    customFields = ((a?.[defs] ?? []) as { id: string; label: string; description?: string }[]).map((f) => ({ fieldId: f.id, label: f.label, ...(f.description ? { description: f.description } : {}), value: values.get(f.id) ?? null }));
+    // A show field with a default: value is the show's own (its override) else the default; isDefault says which.
+    customFields = ((a?.[defs] ?? []) as { id: string; label: string; description?: string; defaultValue?: string }[]).map((f) => ({
+      fieldId: f.id, label: f.label, ...(f.description ? { description: f.description } : {}), value: values.get(f.id) ?? f.defaultValue ?? null,
+      ...(f.defaultValue ? { defaultValue: f.defaultValue, isDefault: !values.has(f.id) } : {}),
+    }));
   }
   const json = JSON.stringify(record);
   const shown = json.length > PAGE_RECORD_CHARS ? `${json.slice(0, PAGE_RECORD_CHARS)}…(cut off: records.get for the rest)` : record;

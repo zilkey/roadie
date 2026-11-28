@@ -6,6 +6,7 @@ import { showTotals } from "@/lib/money";
 import { fmtDur, fmtLong, fmtTime, showName, type ShowFilter } from "@/lib/shows";
 import { fmtDuration } from "@/lib/duration";
 import { setlistTotal, transitionOf } from "@/lib/music";
+import { showFieldValue } from "@/lib/show-fields";
 import type { Expense, Income, Payout, ShowField, Setlist } from "@/schema";
 import type { Row } from "@/lib/firestore-hooks";
 import type { ShowRow } from "./common";
@@ -28,7 +29,7 @@ function Head({ cols, cf }: { cols: [string, string?][]; cf: ShowField[] }) {
 }
 /** A value longer than two lines is cut with "…"; hovering shows all of it. */
 const FieldCells = ({ s, cf }: { s: ShowRow; cf: ShowField[] }) => <>{cf.map((f) => {
-  const v = s.fields?.find((x) => x.fieldId === f.id)?.value;
+  const v = showFieldValue(f, s.fields).value; // the show's own value, else the field's default
   return <td key={f.id} className="cf">{v ? <span className="clamp" title={v}>{v}</span> : <Dash />}</td>;
 })}</>;
 
